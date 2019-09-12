@@ -21,39 +21,8 @@
 
 DEAL_II_NAMESPACE_OPEN
 
-
-/**
- * Namespace for the CUDA wrappers
- */
 namespace CUDAWrappers
 {
-  /**
-   * This class provides all the functions necessary to evaluate functions at
-   * quadrature points and cell integrations. In functionality, this class is
-   * similar to FEValues<dim>.
-   *
-   * This class has five template arguments:
-   *
-   * @tparam dim Dimension in which this class is to be used
-   *
-   * @tparam fe_degree Degree of the tensor prodict finite element with fe_degree+1
-   * degrees of freedom per coordinate direction
-   *
-   * @tparam n_q_points_1d Number of points in the quadrature formular in 1D,
-   * defaults to fe_degree+1
-   *
-   * @tparam n_components Number of vector components when solving a system of
-   * PDEs. If the same operation is applied to several components of a PDE (e.g.
-   * a vector Laplace equation), they can be applied simultaneously with one
-   * call (and often more efficiently). Defaults to 1
-   *
-   * @tparam Number Number format, @p double or @p float. Defaults to @p
-   * double.
-   *
-   * @ingroup CUDAWrappers
-   *
-   * @author Karl Ljungkvist, Bruno Turcksin, 2016
-   */
   template <int dim,
             int fe_degree,
             int n_q_points_1d = fe_degree + 1,
@@ -72,112 +41,41 @@ namespace CUDAWrappers
     static constexpr unsigned int tensor_dofs_per_cell =
       Utilities::pow(fe_degree + 1, dim);
 
-    /**
-     * Constructor.
-     */
     __device__
     FEEvaluationGL(const unsigned int       cell_id,
 		   const data_type *        data,
 		   SharedData<dim, Number> *shdata);
 
-    /**
-     * For the vector @p src, read out the values on the degrees of freedom of
-     * the current cell, and store them internally. Similar functionality as
-     * the function DoFAccessor::get_interpolated_dof_values when no
-     * constraints are present, but it also includes constraints from hanging
-     * nodes, so once can see it as a similar function to
-     * AffineConstraints::read_dof_valuess as well.
-     */
     __device__ void
     read_dof_values(const Number *src);
 
-    /**
-     * Take the value stored internally on dof values of the current cell and
-     * sum them into the vector @p dst. The function also applies constraints
-     * during the write operation. The functionality is hence similar to the
-     * function AffineConstraints::distribute_local_to_global.
-     */
     __device__ void
     distribute_local_to_global(Number *dst) const;
 
-    /**
-     * Evaluate the function values and the gradients of the FE function given
-     * at the DoF values in the input vector at the quadrature points on the
-     * unit cell. The function arguments specify which parts shall actually be
-     * computed. This function needs to be called before the functions
-     * @p get_value() or @p get_gradient() give useful information.
-     */
     __device__ void
     evaluate(const bool evaluate_val, const bool evaluate_grad);
 
-    /**
-     * This function takes the values and/or gradients that are stored on
-     * quadrature points, tests them by all the basis functions/gradients on
-     * the cell and performs the cell integration. The two function arguments
-     * @p integrate_val and @p integrate_grad are used to enable/disable some
-     * of the values or the gradients.
-     */
     __device__ void
     integrate(const bool integrate_val, const bool integrate_grad);
 
-    /**
-     * Return the value of a finite element function at quadrature point
-     * number @p q_point after a call to @p evaluate(true,...).
-     */
     __device__ value_type
                get_value(const unsigned int q_point) const;
 
-    /**
-     * Return the value of a finite element function at degree of freedom
-     * @p dof after a call to integrate() or before a call to evaluate().
-     */
     __device__ value_type
                get_dof_value(const unsigned int dof) const;
 
-    /**
-     * Write a value to the field containing the values on quadrature points
-     * with component @p q_point. Access to the same fields as through @p
-     * get_value(). This specifies the value which is tested by all basis
-     * function on the current cell and integrated over.
-     */
     __device__ void
     submit_value(const value_type &val_in, const unsigned int q_point);
 
-    /**
-     * Write a value to the field containing the values for the degree of
-     * freedom with index @p dof after a call to integrate() or before
-     * calling evaluate(). Access through the same fields as through
-     * get_dof_value().
-     */
     __device__ void
     submit_dof_value(const value_type &val_in, const unsigned int dof);
 
-    /**
-     * Return the gradient of a finite element function at quadrature point
-     * number @p q_point after a call to @p evaluate(...,true).
-     */
     __device__ gradient_type
                get_gradient(const unsigned int q_point) const;
 
-    /**
-     * Write a contribution that is tested by the gradient to the field
-     * containing the values on quadrature points with component @p q_point
-     */
     __device__ void
     submit_gradient(const gradient_type &grad_in, const unsigned int q_point);
 
-    // clang-format off
-    /**
-     * Apply the functor @p func on every quadrature point.
-     *
-     * @p func needs to define
-     * \code
-     * __device__ void operator()(
-     *   CUDAWrappers::FEEvaluation<dim, fe_degree, n_q_points_1d, n_components, Number> *fe_eval,
-     *   const unsigned int                                                               q_point) const;
-     * \endcode
-     */
-    // clang-format on
     template <typename Functor>
     __device__ void
     apply_quad_point_operations(const Functor &func);
