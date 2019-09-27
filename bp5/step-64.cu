@@ -12,9 +12,6 @@
  * the top level directory of deal.II.
  *
  * ---------------------------------------------------------------------
-
- *
- * Authors: Bruno Turcksin, Daniel Arndt, Oak Ridge National Laboratory, 2019
  */
 
 #include <deal.II/base/conditional_ostream.h>
@@ -362,36 +359,39 @@ namespace Step64
   template <int dim, int fe_degree>
   void HelmholtzProblem<dim, fe_degree>::solve()
   {
-    PreconditionIdentity preconditioner;
+    DiagonalMatrix<LinearAlgebra::distributed::Vector<double,
+      MemorySpace::CUDA>> preconditioner;
+    preconditioner.get_vector().reinit(system_rhs_dev);
+    preconditioner.get_vector() = 1.;
 
     for (unsigned int i=0; i<10; ++i)
       {
-	Timer time;
-	SolverControl solver_control(system_rhs_dev.size(),
-				     1e-12 * system_rhs_dev.l2_norm());
-	SolverCG<LinearAlgebra::distributed::Vector<double, MemorySpace::CUDA>> cg(
-	   solver_control);
-	solution_dev = 0;
-	cg.solve(*system_matrix_dev, solution_dev, system_rhs_dev, preconditioner);
+        Timer time;
+        IterationNumberControl solver_control(200,
+                                              1e-12 * system_rhs_dev.l2_norm());
+        SolverCG<LinearAlgebra::distributed::Vector<double, MemorySpace::CUDA>> cg(
+                                                                                   solver_control);
+        solution_dev = 0;
+        cg.solve(*system_matrix_dev, solution_dev, system_rhs_dev, preconditioner);
 
-	cudaDeviceSynchronize();
-	pcout << "   Solved in " << solver_control.last_step()
-	      << " iterations with time " << time.wall_time()
-	      << " and DoFs/s " << static_cast<double>(dof_handler.n_dofs()) * solver_control.last_step() / time.wall_time()
-	      << std::endl;
+        cudaDeviceSynchronize();
+        pcout << "   Solved in " << solver_control.last_step()
+              << " iterations with time " << time.wall_time()
+              << " and DoFs/s " << static_cast<double>(dof_handler.n_dofs()) * solver_control.last_step() / time.wall_time()
+              << std::endl;
       }
 
     for (unsigned int i=0; i<10; ++i)
       {
-	Timer time;
-	
-	for (unsigned int t=0; t<100; ++t)
-	  system_matrix_dev->vmult(system_rhs_dev, solution_dev);
-	
-	cudaDeviceSynchronize();
-	pcout << "   100 mat-vecs in time " << time.wall_time()
-	      << " and DoFs/s " << static_cast<double>(dof_handler.n_dofs()) * 100. / time.wall_time()
-	      << std::endl;
+        Timer time;
+
+        for (unsigned int t=0; t<100; ++t)
+          system_matrix_dev->vmult(system_rhs_dev, solution_dev);
+
+        cudaDeviceSynchronize();
+        pcout << "   100 mat-vecs in time " << time.wall_time()
+              << " and DoFs/s " << static_cast<double>(dof_handler.n_dofs()) * 100. / time.wall_time()
+              << std::endl;
       }
 
     LinearAlgebra::ReadWriteVector<double> rw_vector(locally_owned_dofs);
@@ -455,13 +455,28 @@ namespace Step64
   template <int dim, int fe_degree>
   void HelmholtzProblem<dim, fe_degree>::run()
   {
-    for (unsigned int cycle = 0; cycle < 9 - dim; ++cycle)
+    for (unsigned int cycle = 0; cycle < 24; ++cycle)
       {
         pcout << "Cycle " << cycle << std::endl;
 
-        if (cycle == 0)
-          GridGenerator::hyper_cube(triangulation, 0., 1.);
-        triangulation.refine_global(1);
+        const unsigned int n_refine = (cycle + 6)/dim;
+        const unsigned int remainder = cycle%dim;
+        std::vector<unsigned int> subdivisions(dim, 1);
+        for (unsigned int d=0; d<remainder; ++d)
+          subdivisions[d] = 2;
+        Point<dim> p1;
+        for (unsigned int d=0; d<dim; ++d)
+          p1[d] = -1;
+        Point<dim> p2;
+        for (unsigned int d=0; d<remainder; ++d)
+          p2[d] = 3;
+        for (unsigned int d=remainder; d<dim; ++d)
+          p2[d] = 1;
+
+        triangulation.clear();
+        GridGenerator::subdivided_hyper_rectangle(triangulation, subdivisions,
+                                                  p1, p2);
+        triangulation.refine_global(n_refine);
 
         setup_system();
 
