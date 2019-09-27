@@ -42,6 +42,8 @@
 
 #include <fstream>
 
+#include "solver.h"
+
 
 namespace Step64
 {
@@ -576,8 +578,31 @@ namespace Step64
         pcout << "   Solved in " << solver_control.last_step()
               << " iterations with time " << time.wall_time()
               << " and DoFs/s " << static_cast<double>(dof_handler.n_dofs()) * solver_control.last_step() / time.wall_time()
+              << " norm " << solution_dev.l2_norm()
               << std::endl;
       }
+
+    pcout << std::endl;
+
+    for (unsigned int i=0; i<10; ++i)
+      {
+        Timer time;
+        IterationNumberControl solver_control(200,
+                                              1e-12 * system_rhs_dev.l2_norm());
+        SolverCG2<LinearAlgebra::distributed::Vector<double, MemorySpace::CUDA>> cg(
+                                                                                   solver_control);
+        solution_dev = 0;
+        cg.solve(*system_matrix_dev, solution_dev, system_rhs_dev, preconditioner);
+
+        cudaDeviceSynchronize();
+        pcout << "   Solved in " << solver_control.last_step()
+              << " iterations with time " << time.wall_time()
+              << " and DoFs/s " << static_cast<double>(dof_handler.n_dofs()) * solver_control.last_step() / time.wall_time()
+              << " norm " << solution_dev.l2_norm()
+              << std::endl;
+      }
+
+    pcout << std::endl;
 
     for (unsigned int i=0; i<10; ++i)
       {
