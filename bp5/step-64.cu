@@ -568,7 +568,7 @@ namespace Step64
       {
         Timer time;
         IterationNumberControl solver_control(200,
-                                              1e-12 * system_rhs_dev.l2_norm());
+                                              0.0 * system_rhs_dev.l2_norm());
         SolverCG<LinearAlgebra::distributed::Vector<double, MemorySpace::CUDA>> cg(
                                                                                    solver_control);
         solution_dev = 0;
@@ -588,7 +588,7 @@ namespace Step64
       {
         Timer time;
         IterationNumberControl solver_control(200,
-                                              1e-12 * system_rhs_dev.l2_norm());
+                                              0.0 * system_rhs_dev.l2_norm());
         SolverCG2<LinearAlgebra::distributed::Vector<double, MemorySpace::CUDA>> cg(
                                                                                    solver_control);
         solution_dev = 0;
@@ -678,7 +678,7 @@ namespace Step64
   template <int dim, int fe_degree>
   void HelmholtzProblem<dim, fe_degree>::run()
   {
-    for (unsigned int cycle = 0; cycle < 24; ++cycle)
+    for (unsigned int cycle = 3; cycle < 4; ++cycle)
       {
         pcout << "Cycle " << cycle << std::endl;
 
