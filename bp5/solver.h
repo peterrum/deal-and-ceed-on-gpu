@@ -303,7 +303,7 @@ using size_type = types::global_dof_index;
 
       template <typename Number>
       __global__ void
-      update_a(Number *d, Number *g, Number *h, Number *x, Number * diag,  const Number alpha, const Number beta, const size_type N)
+      update_a(Number *p, Number *r, Number *v, Number *x, Number * diag,  const Number alpha, const Number beta, const size_type N)
       {
           
           
@@ -314,16 +314,16 @@ using size_type = types::global_dof_index;
             const size_type idx = idx_base + i * block_size;
             if (idx < N)
             {
-              g[idx] = g[idx] - alpha * h[idx];
-              x[idx] = x[idx] + alpha * d[idx];
-              d[idx] = diag[idx] * g[idx] + beta * d[idx];
+              r[idx] = r[idx] - alpha * v[idx];
+              x[idx] = x[idx] + alpha * p[idx];
+              p[idx] = diag[idx] * r[idx] + beta * p[idx];
             }
           }
       }
       
       template <typename Number>
       __global__ void
-      reduction(Number *result, const Number *d, const Number *g, const Number *h, const Number *diag, const size_type N)
+      update_b(Number *result, const Number *p, const Number *r, const Number *v, const Number *diag, const size_type N)
       {
         __shared__ Number result_buffer0[block_size];
         __shared__ Number result_buffer1[block_size];
@@ -339,17 +339,23 @@ using size_type = types::global_dof_index;
 
         if (global_idx < N)
         {
-          result_buffer0[local_idx] = d[local_idx] * h[local_idx];
-          result_buffer1[local_idx] = h[local_idx] * h[local_idx];
-          result_buffer2[local_idx] = g[local_idx] * h[local_idx];
-          result_buffer3[local_idx] = g[local_idx] * g[local_idx];
-          result_buffer6[local_idx] = g[local_idx] * diag[local_idx] * g[local_idx];
-          result_buffer4[local_idx] = g[local_idx] * diag[local_idx] * h[local_idx];
-          result_buffer5[local_idx] = h[local_idx] * diag[local_idx] * h[local_idx];
+          result_buffer0[local_idx] = p[local_idx] * v[local_idx];
+          result_buffer1[local_idx] = r[local_idx] * r[local_idx];
+          result_buffer2[local_idx] = r[local_idx] * v[local_idx];
+          result_buffer3[local_idx] = v[local_idx] * v[local_idx];
+          result_buffer4[local_idx] = r[local_idx] * diag[local_idx] * r[local_idx];
+          result_buffer5[local_idx] = r[local_idx] * diag[local_idx] * v[local_idx];
+          result_buffer6[local_idx] = v[local_idx] * diag[local_idx] * v[local_idx];
         }
         else
         {
           result_buffer0[local_idx] = Number();
+          result_buffer1[local_idx] = Number();
+          result_buffer2[local_idx] = Number();
+          result_buffer3[local_idx] = Number();
+          result_buffer4[local_idx] = Number();
+          result_buffer5[local_idx] = Number();
+          result_buffer6[local_idx] = Number();
         }
 
         __syncthreads();
@@ -605,47 +611,50 @@ SolverCG2<VectorType>::solve(const MatrixType &        A,
     typename dealii::VectorMemory<VectorType>::Pointer h_pointer(this->memory);
 
     // define some aliases for simpler access
-    VectorType &g = *g_pointer;
-    VectorType &d = *d_pointer;
-    VectorType &h = *h_pointer;
+    VectorType &r = *g_pointer;
+    VectorType &p = *d_pointer;
+    VectorType &v = *h_pointer;
 
     int    it  = 0;
     double res_norm = -std::numeric_limits<double>::max();
 
     // resize the vectors, but do not set the values since they'd be
     // overwritten soon anyway.
-    g.reinit(x, true);
-    d.reinit(x, true);
-    h.reinit(x, true);
+    r.reinit(x, true);
+    p.reinit(x, true);
+    v.reinit(x, true);
 
     // compute residual. if vector is zero, then short-circuit the full
     // computation
     if (!x.all_zero())
       {
-        A.vmult(g, x);
-        g.add(-1., b);
+        A.vmult(r, x);
+        r.add(-1., b);
       }
     else
-      g.equ(-1., b);
-    res_norm = g.l2_norm();
+      r.equ(-1., b);
+    res_norm = r.l2_norm();
 
     conv = this->iteration_status(0, res_norm, x);
     if (conv != dealii::SolverControl::iterate)
       return;
 
-    number alpha = 0.;
-    number beta = 0.;
+  if (std::is_same<PreconditionerType, PreconditionIdentity>::value == false)
+    {
+      preconditioner.vmult(v, r);
+      p.equ(-1., v);
+    }
+  else
+    {
+      p.equ(-1., r);
+    }
+
+    number alpha = 0.0; //(r * p) / (p * v);
+    number beta  = 0.0;
 
     while (conv == dealii::SolverControl::iterate)
       {
         it++;
-
-        //for(unsigned int i = 0; i < x.size(); i++)
-        //{
-        //  g[i] = g[i] - alpha * h[i];
-        //  x[i] = x[i] + alpha * d[i];
-        //  d[i] = preconditioner.get_vector()[i] * g[i] + beta * d[i];
-        //}
         
         using ::dealii::CUDAWrappers::block_size;
         using ::dealii::CUDAWrappers::chunk_size;
@@ -653,40 +662,28 @@ SolverCG2<VectorType>::solve(const MatrixType &        A,
         
         const int n_blocks = 1 + x.size() / (chunk_size * block_size);
         my_kernel::update_a<double>
-          <<<n_blocks, block_size>>>(d.get_values (), g.get_values (), 
-                h.get_values (), x.get_values (), preconditioner.get_vector().get_values (), alpha, beta, x.size() );
+          <<<n_blocks, block_size>>>(p.get_values (), r.get_values (), 
+                v.get_values (), x.get_values (), preconditioner.get_vector().get_values (), alpha, beta, x.size() );
         
-        A.vmult(h, d);
+        A.vmult(v, p);
         
         double results[7];
         
-        my_kernel::reduction<double> <<<dim3(n_blocks, 1), dim3(block_size)>>>
-            (results, d.get_values (), g.get_values (), h.get_values (), preconditioner.get_vector().get_values (), x.size());
-        
-        //for(unsigned int i = 0; i < x.size(); i++)
-        //{
-        //  results[0] += d[i] * h[i]; 
-        //  results[1] += h[i] * h[i]; 
-        //  results[2] += g[i] * h[i]; 
-        //  results[3] += g[i] * g[i]; 
-        //  results[6] += g[i] * preconditioner.get_vector()[i] * g[i]; 
-        //  results[4] += g[i] * preconditioner.get_vector()[i] * h[i]; 
-        //  results[5] += h[i] * preconditioner.get_vector()[i] * h[i]; 
-        //}
+        my_kernel::update_b<double> <<<dim3(n_blocks, 1), dim3(block_size)>>>
+            (results, p.get_values (), r.get_values (), v.get_values (), preconditioner.get_vector().get_values (), x.size());
         
         Assert(std::abs(results[0]) != 0., dealii::ExcDivideByZero());
-        alpha = results[6] / results[0];
+        alpha = results[4] / results[0];
 
-        res_norm = std::sqrt(results[3] + 2*alpha*results[2] + alpha*alpha*results[1]);
+        res_norm = std::sqrt(results[1] + 2*alpha*results[2] + alpha*alpha*results[3]);
         conv = this->iteration_status(it, res_norm, x);
         if (conv != dealii::SolverControl::iterate)
           {
-            x.add(alpha, d);
+            x.add(alpha, p);
             break;
           }
 
-        const number gh = results[6] - 2 * alpha * results[4] + alpha * alpha * results[5];
-        beta = gh/results[6];
+        beta = (results[4] - 2 * alpha * results[5] + alpha * alpha * results[6])/results[4];
       }
 
     // in case of failure: throw exception
