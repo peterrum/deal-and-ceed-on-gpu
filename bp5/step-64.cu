@@ -215,6 +215,9 @@ namespace Step64
     additional_data.mapping_update_flags = update_values | update_gradients |
                                            update_JxW_values |
                                            update_quadrature_points;
+    
+    additional_data.use_ghost_coloring = true;
+
     const QGaussLobatto<1> quad(fe_degree + 1);
     mf_data.reinit(mapping, dof_handler, constraints, quad, additional_data);
 
