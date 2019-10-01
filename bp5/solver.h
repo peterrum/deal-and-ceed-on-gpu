@@ -357,7 +357,7 @@ SolverCG2<VectorType>::solve(const MatrixType &        A,
 
       // 3) dot-production region
       internal::kernels::update_b<number>
-        <<<dim3(n_blocks, 1), dim3(::dealii::CUDAWrappers::block_size)>>>(
+        <<<n_blocks, ::dealii::CUDAWrappers::block_size>>>(
           results_dev,
           d.get_values(),
           g.get_values(),
