@@ -43,8 +43,8 @@ namespace CUDAWrappers
 
     __device__
     FEEvaluationGL(const unsigned int       cell_id,
-		   const data_type *        data,
-		   SharedData<dim, Number> *shdata);
+                   const data_type *        data,
+                   SharedData<dim, Number> *shdata);
 
     __device__ void
     read_dof_values(const Number *src);
@@ -107,8 +107,8 @@ namespace CUDAWrappers
   __device__
   FEEvaluationGL<dim, fe_degree, n_q_points_1d, n_components_, Number>::
     FEEvaluationGL(const unsigned int       cell_id,
-		   const data_type *        data,
-		   SharedData<dim, Number> *shdata)
+                   const data_type *        data,
+                   SharedData<dim, Number> *shdata)
     : n_cells(data->n_cells)
     , padding_length(data->padding_length)
     , constraint_mask(data->constraint_mask[cell_id])
@@ -188,9 +188,8 @@ namespace CUDAWrappers
             int n_components_,
             typename Number>
   __device__ void
-  FEEvaluationGL<dim, fe_degree, n_q_points_1d, n_components_, Number>::evaluate(
-    const bool evaluate_val,
-    const bool evaluate_grad)
+  FEEvaluationGL<dim, fe_degree, n_q_points_1d, n_components_, Number>::
+    evaluate(const bool evaluate_val, const bool evaluate_grad)
   {
     // First evaluate the gradients because it requires values that will be
     // changed if evaluate_val is true
@@ -222,9 +221,8 @@ namespace CUDAWrappers
             int n_components_,
             typename Number>
   __device__ void
-  FEEvaluationGL<dim, fe_degree, n_q_points_1d, n_components_, Number>::integrate(
-    const bool integrate_val,
-    const bool integrate_grad)
+  FEEvaluationGL<dim, fe_degree, n_q_points_1d, n_components_, Number>::
+    integrate(const bool integrate_val, const bool integrate_grad)
   {
     internal::EvaluatorTensorProduct<
       internal::EvaluatorVariant::evaluate_general,
@@ -259,12 +257,12 @@ namespace CUDAWrappers
             int n_components_,
             typename Number>
   __device__ typename FEEvaluationGL<dim,
-                                   fe_degree,
-                                   n_q_points_1d,
-                                   n_components_,
-                                   Number>::value_type
-  FEEvaluationGL<dim, fe_degree, n_q_points_1d, n_components_, Number>::get_value(
-    const unsigned int q_point) const
+                                     fe_degree,
+                                     n_q_points_1d,
+                                     n_components_,
+                                     Number>::value_type
+  FEEvaluationGL<dim, fe_degree, n_q_points_1d, n_components_, Number>::
+    get_value(const unsigned int q_point) const
   {
     return values[q_point];
   }
@@ -276,11 +274,11 @@ namespace CUDAWrappers
             int n_q_points_1d,
             int n_components_,
             typename Number>
-    __device__ typename FEEvaluationGL<dim,
-                                   fe_degree,
-                                   n_q_points_1d,
-                                   n_components_,
-                                   Number>::value_type
+  __device__ typename FEEvaluationGL<dim,
+                                     fe_degree,
+                                     n_q_points_1d,
+                                     n_components_,
+                                     Number>::value_type
   FEEvaluationGL<dim, fe_degree, n_q_points_1d, n_components_, Number>::
     get_dof_value(const unsigned int dof) const
   {
@@ -323,10 +321,10 @@ namespace CUDAWrappers
             int n_components_,
             typename Number>
   __device__ typename FEEvaluationGL<dim,
-                                   fe_degree,
-                                   n_q_points_1d,
-                                   n_components_,
-                                   Number>::gradient_type
+                                     fe_degree,
+                                     n_q_points_1d,
+                                     n_components_,
+                                     Number>::gradient_type
   FEEvaluationGL<dim, fe_degree, n_q_points_1d, n_components_, Number>::
     get_gradient(const unsigned int q_point) const
   {
