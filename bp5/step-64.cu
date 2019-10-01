@@ -127,8 +127,8 @@ namespace Step64
   class LocalHelmholtzOperator
   {
   public:
-    LocalHelmholtzOperator(double *coefficient)
-      : coef(coefficient)
+    LocalHelmholtzOperator(double *coefficient, bool do_zero_out = true)
+      : coef(coefficient), do_zero_out(do_zero_out)
     {}
 
     __device__ void operator()(
@@ -144,6 +144,9 @@ namespace Step64
 
   private:
     double *coef;
+
+  public:
+    bool do_zero_out;
   };
 
 
@@ -381,6 +384,9 @@ namespace Step64
     CUDAWrappers::MatrixFree<dim, double>       mf_data;
     LinearAlgebra::CUDAWrappers::Vector<double> coef;
     unsigned int n_owned_cells;
+
+  public:
+    bool do_zero_out;
   };
 
 
@@ -388,7 +394,7 @@ namespace Step64
   template <int dim, int fe_degree>
   HelmholtzOperatorMerged<dim, fe_degree>::HelmholtzOperatorMerged(
     const DoFHandler<dim> &          dof_handler,
-    const AffineConstraints<double> &constraints)
+    const AffineConstraints<double> &constraints) : do_zero_out(true)
   {
     MappingQGeneric<dim> mapping(fe_degree);
     typename CUDAWrappers::MatrixFree<dim, double>::AdditionalData
@@ -417,7 +423,8 @@ namespace Step64
     const LinearAlgebra::distributed::Vector<double, MemorySpace::CUDA> &src)
     const
   {
-    //dst = 0.;
+    if(do_zero_out)
+      dst = 0.;
     LocalHelmholtzOperatorMerged<dim, fe_degree>
       helmholtz_operator(coef.get_values(), n_owned_cells);
     mf_data.cell_loop(helmholtz_operator, src, dst);
@@ -564,9 +571,10 @@ namespace Step64
     preconditioner.get_vector().reinit(system_rhs_dev);
     preconditioner.get_vector() = 1.;
 
-    if(false)
     for (unsigned int i=0; i<10; ++i)
       {
+        system_matrix_dev->do_zero_out = true;
+
         Timer time;
         IterationNumberControl solver_control(200,
                                               1e-6 * system_rhs_dev.l2_norm());
@@ -587,6 +595,7 @@ namespace Step64
 
     for (unsigned int i=0; i<10; ++i)
       {
+        system_matrix_dev->do_zero_out = false;
         Timer time;
         IterationNumberControl solver_control(200,
                                               1e-6 * system_rhs_dev.l2_norm());
