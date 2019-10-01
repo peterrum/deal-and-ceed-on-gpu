@@ -2,6 +2,9 @@
 
 ## Installation on Piz Daint
 
+Scripts for building on Piz Daint with gcc can be found in
+[scripts/daint-gcc/](scripts/daint-gcc).
+
 Load the correct modules:
 
 ```bash
