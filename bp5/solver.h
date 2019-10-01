@@ -536,6 +536,10 @@ SolverCG2<VectorType>::solve(const MatrixType &        A,
     number alpha = 0.0; //(g * h) / (d * h);
     number beta  = 0.0; //(res_norm * res_norm) / (g * h);
 
+    double* results_dev; 
+    cudaError_t error_code = cudaMalloc(&results_dev, 7 * sizeof(double));
+    AssertCuda(error_code);
+
     while (conv == dealii::SolverControl::iterate)
       {
         it++;
@@ -544,19 +548,14 @@ SolverCG2<VectorType>::solve(const MatrixType &        A,
         
         const int n_blocks = 1 + x.size() / (::dealii::CUDAWrappers::chunk_size * ::dealii::CUDAWrappers::block_size);
         
-        //if(alpha == 0.0)
-        //  my_kernel::update_a0<double>
-        //    <<<n_blocks, ::dealii::CUDAWrappers::block_size>>>(d.get_values (), g.get_values (), h.get_values (), x.get_values (), preconditioner.get_vector().get_values (), alpha, beta, x.size() );
-        //else
+        if(alpha == 0.0)
+          my_kernel::update_a0<double>
+            <<<n_blocks, ::dealii::CUDAWrappers::block_size>>>(d.get_values (), g.get_values (), h.get_values (), x.get_values (), preconditioner.get_vector().get_values (), alpha, beta, x.size() );
+        else
           my_kernel::update_a<double>
             <<<n_blocks, ::dealii::CUDAWrappers::block_size>>>(d.get_values (), g.get_values (), h.get_values (), x.get_values (), preconditioner.get_vector().get_values (), alpha, beta, x.size() );
         
-        //std::cout << g.l2_norm() << " " << res_norm << std::endl;
         A.vmult(h, d);
-        
-        double* results_dev; 
-        cudaError_t error_code = cudaMalloc(&results_dev, 7 * sizeof(double));
-        AssertCuda(error_code);
         
         error_code = cudaMemset(results_dev, 0, 7 * sizeof(number));
         AssertCuda(error_code);
@@ -566,7 +565,6 @@ SolverCG2<VectorType>::solve(const MatrixType &        A,
         
         double results[7];
         cudaMemcpy(results, results_dev, 7 * sizeof(double), cudaMemcpyDeviceToHost);
-        cudaFree(results_dev);
         
         Assert(std::abs(results[0]) != 0., dealii::ExcDivideByZero());
         alpha = results[6] / results[0];
@@ -581,6 +579,8 @@ SolverCG2<VectorType>::solve(const MatrixType &        A,
 
         beta = alpha * (results[4] + alpha * results[5]) / results[6];
       }
+    
+    cudaFree(results_dev);
 
     // in case of failure: throw exception
     if (conv != dealii::SolverControl::success)
