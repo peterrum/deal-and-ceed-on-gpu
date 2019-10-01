@@ -544,10 +544,14 @@ SolverCG2<VectorType>::solve(const MatrixType &        A,
       {
         it++;
         
-        using size_type = types::global_dof_index;
-        
+        using size_type    = types::global_dof_index;
         const int n_blocks = 1 + x.size() / (::dealii::CUDAWrappers::chunk_size * ::dealii::CUDAWrappers::block_size);
         
+        // clear stash for dot-region
+        error_code = cudaMemsetAsync(results_dev, 0, 7 * sizeof(number));
+        AssertCuda(error_code);
+        
+        // 1) update region
         if(alpha == 0.0)
           my_kernel::update_a0<double>
             <<<n_blocks, ::dealii::CUDAWrappers::block_size>>>(d.get_values (), g.get_values (), h.get_values (), x.get_values (), preconditioner.get_vector().get_values (), alpha, beta, x.size() );
@@ -555,14 +559,14 @@ SolverCG2<VectorType>::solve(const MatrixType &        A,
           my_kernel::update_a<double>
             <<<n_blocks, ::dealii::CUDAWrappers::block_size>>>(d.get_values (), g.get_values (), h.get_values (), x.get_values (), preconditioner.get_vector().get_values (), alpha, beta, x.size() );
         
+        // 2) matrix vector multiplication
         A.vmult(h, d);
         
-        error_code = cudaMemset(results_dev, 0, 7 * sizeof(number));
-        AssertCuda(error_code);
-        
+        // 3) dot-production region
         my_kernel::update_b<double> <<<dim3(n_blocks, 1), dim3(::dealii::CUDAWrappers::block_size)>>>
             (results_dev, d.get_values (), g.get_values (), h.get_values (), preconditioner.get_vector().get_values (), x.size());
         
+        // 4) compute scalars
         double results[7];
         cudaMemcpy(results, results_dev, 7 * sizeof(double), cudaMemcpyDeviceToHost);
         
