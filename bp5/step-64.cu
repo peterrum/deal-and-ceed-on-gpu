@@ -679,7 +679,7 @@ namespace Step64
   template <int dim, int fe_degree>
   void HelmholtzProblem<dim, fe_degree>::run()
   {
-    for (unsigned int cycle = 3; cycle < 4; ++cycle)
+    for (unsigned int cycle = 11; cycle < 12; ++cycle)
       {
         pcout << "Cycle " << cycle << std::endl;
 
@@ -729,7 +729,8 @@ int main(int argc, char *argv[])
       int         n_devices       = 0;
       cudaError_t cuda_error_code = cudaGetDeviceCount(&n_devices);
       AssertCuda(cuda_error_code);
-      std::cout << "Number of CUDA devices: " << n_devices << std::endl;
+      ConditionalOStream pcout(std::cout, Utilities::MPI::this_mpi_process(MPI_COMM_WORLD) == 0);
+      pcout << "Number of CUDA devices: " << n_devices << std::endl;
       const unsigned int my_mpi_id =
         Utilities::MPI::this_mpi_process(MPI_COMM_WORLD);
       const int device_id = my_mpi_id % n_devices;
