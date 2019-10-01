@@ -6,7 +6,7 @@ script_dir="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 
 # Set these to the appropriate source and build directories
 deal_and_ceed_on_gpu_dir=${script_dir}/../../
-deal_and_ceed_on_gpu_build_dir=${script_dir}/build/deal-and-ceed-on-gpu
+deal_and_ceed_on_gpu_build_dir=${script_dir}/../../build/deal-and-ceed-on-gpu
 
 dealii_dir=${SCRATCH}/prog/dealii
 dealii_build_dir=${dealii_dir}/build/dealii
