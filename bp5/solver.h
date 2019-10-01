@@ -299,26 +299,38 @@ SolverCG2<VectorType>::compute_eigs_and_cond(
 
 namespace my_kernel
 {
-using ::dealii::CUDAWrappers::block_size;
-using ::dealii::CUDAWrappers::chunk_size;
 using size_type = types::global_dof_index;
 
       template <typename Number>
       __global__ void
-      update_a(Number *p, Number *r, Number *v, Number *x, Number * diag,  const Number alpha, const Number beta, const size_type N)
+      update_a0(Number *p, Number *r, Number *v, Number *x, const Number * diag,  const Number alpha, const Number beta, const size_type N)
       {
-          
-          
-        const size_type idx_base =
-          threadIdx.x + blockIdx.x * (blockDim.x * chunk_size);
-        for (unsigned int i = 0; i < chunk_size; ++i)
+        const size_type idx_base = threadIdx.x + blockIdx.x * (blockDim.x * ::dealii::CUDAWrappers::chunk_size);
+        for (unsigned int i = 0; i < ::dealii::CUDAWrappers::chunk_size; ++i)
           {
-            const size_type idx = idx_base + i * block_size;
+            const size_type idx = idx_base + i * ::dealii::CUDAWrappers::block_size;
             if (idx < N)
             {
-              r[idx] = r[idx] - alpha * v[idx];
-              x[idx] = x[idx] + alpha * p[idx];
-              p[idx] = diag[idx] * r[idx] + beta * p[idx];
+              p[idx] = - diag[idx] * r[idx];
+              v[idx] = 0.0;
+            }
+          }
+      }
+
+      template <typename Number>
+      __global__ void
+      update_a(Number *p, Number *r, Number *v, Number *x, const Number * diag,  const Number alpha, const Number beta, const size_type N)
+      {
+        const size_type idx_base = threadIdx.x + blockIdx.x * (blockDim.x * ::dealii::CUDAWrappers::chunk_size);
+        for (unsigned int i = 0; i < ::dealii::CUDAWrappers::chunk_size; ++i)
+          {
+            const size_type idx = idx_base + i * ::dealii::CUDAWrappers::block_size;
+            if (idx < N)
+            {
+              x[idx] += alpha * p[idx];
+              r[idx] += alpha * v[idx];
+              p[idx] = beta * p[idx] - diag[idx] * r[idx];
+              v[idx] = 0.0;
             }
           }
       }
@@ -327,27 +339,27 @@ using size_type = types::global_dof_index;
       __global__ void
       update_b(Number *result, const Number *p, const Number *r, const Number *v, const Number *diag, const size_type N)
       {
-        __shared__ Number result_buffer0[block_size];
-        __shared__ Number result_buffer1[block_size];
-        __shared__ Number result_buffer2[block_size];
-        __shared__ Number result_buffer3[block_size];
-        __shared__ Number result_buffer4[block_size];
-        __shared__ Number result_buffer5[block_size];
-        __shared__ Number result_buffer6[block_size];
+        __shared__ Number result_buffer0[::dealii::CUDAWrappers::block_size];
+        __shared__ Number result_buffer1[::dealii::CUDAWrappers::block_size];
+        __shared__ Number result_buffer2[::dealii::CUDAWrappers::block_size];
+        __shared__ Number result_buffer3[::dealii::CUDAWrappers::block_size];
+        __shared__ Number result_buffer4[::dealii::CUDAWrappers::block_size];
+        __shared__ Number result_buffer5[::dealii::CUDAWrappers::block_size];
+        __shared__ Number result_buffer6[::dealii::CUDAWrappers::block_size];
 
-        const size_type global_idx =
-          threadIdx.x + blockIdx.x * (blockDim.x * chunk_size);
+        const size_type global_idx = threadIdx.x + blockIdx.x * (blockDim.x * ::dealii::CUDAWrappers::chunk_size);
         const size_type local_idx = threadIdx.x;
 
+            
         if (global_idx < N)
         {
-          result_buffer0[local_idx] = p[local_idx] * v[local_idx];
-          result_buffer1[local_idx] = r[local_idx] * r[local_idx];
-          result_buffer2[local_idx] = r[local_idx] * v[local_idx];
-          result_buffer3[local_idx] = v[local_idx] * v[local_idx];
-          result_buffer4[local_idx] = r[local_idx] * diag[local_idx] * r[local_idx];
-          result_buffer5[local_idx] = r[local_idx] * diag[local_idx] * v[local_idx];
-          result_buffer6[local_idx] = v[local_idx] * diag[local_idx] * v[local_idx];
+          result_buffer0[local_idx] = p[global_idx] * v[global_idx];
+          result_buffer1[local_idx] = v[global_idx] * v[global_idx];
+          result_buffer2[local_idx] = r[global_idx] * v[global_idx];
+          result_buffer3[local_idx] = r[global_idx] * r[global_idx];
+          result_buffer4[local_idx] = r[global_idx] * diag[global_idx] * v[global_idx];
+          result_buffer5[local_idx] = v[global_idx] * diag[global_idx] * v[global_idx];
+          result_buffer6[local_idx] = r[global_idx] * diag[global_idx] * r[global_idx];
         }
         else
         {
@@ -359,85 +371,100 @@ using size_type = types::global_dof_index;
           result_buffer5[local_idx] = Number();
           result_buffer6[local_idx] = Number();
         }
+        
+        for (unsigned int i = 1; i < ::dealii::CUDAWrappers::chunk_size; ++i)
+        {
+          const size_type idx = global_idx + i * ::dealii::CUDAWrappers::block_size;
+          if (idx < N)
+          {
+            result_buffer0[local_idx] += p[idx] * v[idx];
+            result_buffer1[local_idx] += v[idx] * v[idx];
+            result_buffer2[local_idx] += r[idx] * v[idx];
+            result_buffer3[local_idx] += r[idx] * r[idx];
+            result_buffer4[local_idx] += r[idx] * diag[idx] * v[idx];
+            result_buffer5[local_idx] += v[idx] * diag[idx] * v[idx];
+            result_buffer6[local_idx] += r[idx] * diag[idx] * r[idx];
+          }
+        }
 
         __syncthreads();
         
-        for (size_type s = block_size / 2; s > 32; s = s >> 1)
+        for (size_type s = ::dealii::CUDAWrappers::block_size / 2; s > 32; s = s >> 1)
           {
             if (local_idx < s)
             {
-              result_buffer0[local_idx] = (result_buffer0[local_idx] + result_buffer0[local_idx + s]);
-              result_buffer1[local_idx] = (result_buffer1[local_idx] + result_buffer1[local_idx + s]);
-              result_buffer2[local_idx] = (result_buffer2[local_idx] + result_buffer2[local_idx + s]);
-              result_buffer3[local_idx] = (result_buffer3[local_idx] + result_buffer3[local_idx + s]);
-              result_buffer4[local_idx] = (result_buffer4[local_idx] + result_buffer4[local_idx + s]);
-              result_buffer5[local_idx] = (result_buffer5[local_idx] + result_buffer5[local_idx + s]);
-              result_buffer6[local_idx] = (result_buffer6[local_idx] + result_buffer6[local_idx + s]);
+              result_buffer0[local_idx] += result_buffer0[local_idx + s];
+              result_buffer1[local_idx] += result_buffer1[local_idx + s];
+              result_buffer2[local_idx] += result_buffer2[local_idx + s];
+              result_buffer3[local_idx] += result_buffer3[local_idx + s];
+              result_buffer4[local_idx] += result_buffer4[local_idx + s];
+              result_buffer5[local_idx] += result_buffer5[local_idx + s];
+              result_buffer6[local_idx] += result_buffer6[local_idx + s];
             }
             __syncthreads();
           }
 
         if (local_idx < 32)
         {
-          if (block_size >= 64)
+          if (::dealii::CUDAWrappers::block_size >= 64)
           {
-            result_buffer0[local_idx] = (result_buffer0[local_idx] + result_buffer0[local_idx + 32]);
-            result_buffer1[local_idx] = (result_buffer1[local_idx] + result_buffer1[local_idx + 32]);
-            result_buffer2[local_idx] = (result_buffer2[local_idx] + result_buffer2[local_idx + 32]);
-            result_buffer3[local_idx] = (result_buffer3[local_idx] + result_buffer3[local_idx + 32]);
-            result_buffer4[local_idx] = (result_buffer4[local_idx] + result_buffer4[local_idx + 32]);
-            result_buffer5[local_idx] = (result_buffer5[local_idx] + result_buffer5[local_idx + 32]);
-            result_buffer6[local_idx] = (result_buffer6[local_idx] + result_buffer6[local_idx + 32]);
+            result_buffer0[local_idx] += result_buffer0[local_idx + 32];
+            result_buffer1[local_idx] += result_buffer1[local_idx + 32];
+            result_buffer2[local_idx] += result_buffer2[local_idx + 32];
+            result_buffer3[local_idx] += result_buffer3[local_idx + 32];
+            result_buffer4[local_idx] += result_buffer4[local_idx + 32];
+            result_buffer5[local_idx] += result_buffer5[local_idx + 32];
+            result_buffer6[local_idx] += result_buffer6[local_idx + 32];
           }
-          if (block_size >= 32)
+          if (::dealii::CUDAWrappers::block_size >= 32)
           {
-            result_buffer0[local_idx] = (result_buffer0[local_idx] + result_buffer0[local_idx + 16]);
-            result_buffer1[local_idx] = (result_buffer1[local_idx] + result_buffer1[local_idx + 16]);
-            result_buffer2[local_idx] = (result_buffer2[local_idx] + result_buffer2[local_idx + 16]);
-            result_buffer3[local_idx] = (result_buffer3[local_idx] + result_buffer3[local_idx + 16]);
-            result_buffer4[local_idx] = (result_buffer4[local_idx] + result_buffer4[local_idx + 16]);
-            result_buffer5[local_idx] = (result_buffer5[local_idx] + result_buffer5[local_idx + 16]);
-            result_buffer6[local_idx] = (result_buffer6[local_idx] + result_buffer6[local_idx + 16]);
+            result_buffer0[local_idx] += result_buffer0[local_idx + 16];
+            result_buffer1[local_idx] += result_buffer1[local_idx + 16];
+            result_buffer2[local_idx] += result_buffer2[local_idx + 16];
+            result_buffer3[local_idx] += result_buffer3[local_idx + 16];
+            result_buffer4[local_idx] += result_buffer4[local_idx + 16];
+            result_buffer5[local_idx] += result_buffer5[local_idx + 16];
+            result_buffer6[local_idx] += result_buffer6[local_idx + 16];
           }
-          if (block_size >= 16)
+          if (::dealii::CUDAWrappers::block_size >= 16)
           {
-            result_buffer0[local_idx] = (result_buffer0[local_idx] + result_buffer0[local_idx + 8]);
-            result_buffer1[local_idx] = (result_buffer1[local_idx] + result_buffer1[local_idx + 8]);
-            result_buffer2[local_idx] = (result_buffer2[local_idx] + result_buffer2[local_idx + 8]);
-            result_buffer3[local_idx] = (result_buffer3[local_idx] + result_buffer3[local_idx + 8]);
-            result_buffer4[local_idx] = (result_buffer4[local_idx] + result_buffer4[local_idx + 8]);
-            result_buffer5[local_idx] = (result_buffer5[local_idx] + result_buffer5[local_idx + 8]);
-            result_buffer6[local_idx] = (result_buffer6[local_idx] + result_buffer6[local_idx + 8]);
+            result_buffer0[local_idx] += result_buffer0[local_idx + 8];
+            result_buffer1[local_idx] += result_buffer1[local_idx + 8];
+            result_buffer2[local_idx] += result_buffer2[local_idx + 8];
+            result_buffer3[local_idx] += result_buffer3[local_idx + 8];
+            result_buffer4[local_idx] += result_buffer4[local_idx + 8];
+            result_buffer5[local_idx] += result_buffer5[local_idx + 8];
+            result_buffer6[local_idx] += result_buffer6[local_idx + 8];
           }
-          if (block_size >= 8)
+          if (::dealii::CUDAWrappers::block_size >= 8)
           {
-            result_buffer0[local_idx] = (result_buffer0[local_idx] + result_buffer0[local_idx + 4]);
-            result_buffer1[local_idx] = (result_buffer1[local_idx] + result_buffer1[local_idx + 4]);
-            result_buffer2[local_idx] = (result_buffer2[local_idx] + result_buffer2[local_idx + 4]);
-            result_buffer3[local_idx] = (result_buffer3[local_idx] + result_buffer3[local_idx + 4]);
-            result_buffer4[local_idx] = (result_buffer4[local_idx] + result_buffer4[local_idx + 4]);
-            result_buffer5[local_idx] = (result_buffer5[local_idx] + result_buffer5[local_idx + 4]);
-            result_buffer6[local_idx] = (result_buffer6[local_idx] + result_buffer6[local_idx + 4]);
+            result_buffer0[local_idx] += result_buffer0[local_idx + 4];
+            result_buffer1[local_idx] += result_buffer1[local_idx + 4];
+            result_buffer2[local_idx] += result_buffer2[local_idx + 4];
+            result_buffer3[local_idx] += result_buffer3[local_idx + 4];
+            result_buffer4[local_idx] += result_buffer4[local_idx + 4];
+            result_buffer5[local_idx] += result_buffer5[local_idx + 4];
+            result_buffer6[local_idx] += result_buffer6[local_idx + 4];
           }
-          if (block_size >= 4)
+          if (::dealii::CUDAWrappers::block_size >= 4)
           {
-            result_buffer0[local_idx] = (result_buffer0[local_idx] + result_buffer0[local_idx + 2]);
-            result_buffer1[local_idx] = (result_buffer1[local_idx] + result_buffer1[local_idx + 2]);
-            result_buffer2[local_idx] = (result_buffer2[local_idx] + result_buffer2[local_idx + 2]);
-            result_buffer3[local_idx] = (result_buffer3[local_idx] + result_buffer3[local_idx + 2]);
-            result_buffer4[local_idx] = (result_buffer4[local_idx] + result_buffer4[local_idx + 2]);
-            result_buffer5[local_idx] = (result_buffer5[local_idx] + result_buffer5[local_idx + 2]);
-            result_buffer6[local_idx] = (result_buffer6[local_idx] + result_buffer6[local_idx + 2]);
+            result_buffer0[local_idx] += result_buffer0[local_idx + 2];
+            result_buffer1[local_idx] += result_buffer1[local_idx + 2];
+            result_buffer2[local_idx] += result_buffer2[local_idx + 2];
+            result_buffer3[local_idx] += result_buffer3[local_idx + 2];
+            result_buffer4[local_idx] += result_buffer4[local_idx + 2];
+            result_buffer5[local_idx] += result_buffer5[local_idx + 2];
+            result_buffer6[local_idx] += result_buffer6[local_idx + 2];
           }
-          if (block_size >= 2)
+          if (::dealii::CUDAWrappers::block_size >= 2)
           {
-            result_buffer0[local_idx] = (result_buffer0[local_idx] + result_buffer0[local_idx + 1]);
-            result_buffer1[local_idx] = (result_buffer1[local_idx] + result_buffer1[local_idx + 1]);
-            result_buffer2[local_idx] = (result_buffer2[local_idx] + result_buffer2[local_idx + 1]);
-            result_buffer3[local_idx] = (result_buffer3[local_idx] + result_buffer3[local_idx + 1]);
-            result_buffer4[local_idx] = (result_buffer4[local_idx] + result_buffer4[local_idx + 1]);
-            result_buffer5[local_idx] = (result_buffer5[local_idx] + result_buffer5[local_idx + 1]);
-            result_buffer6[local_idx] = (result_buffer6[local_idx] + result_buffer6[local_idx + 1]);
+            result_buffer0[local_idx] += result_buffer0[local_idx + 1];
+            result_buffer1[local_idx] += result_buffer1[local_idx + 1];
+            result_buffer2[local_idx] += result_buffer2[local_idx + 1];
+            result_buffer3[local_idx] += result_buffer3[local_idx + 1];
+            result_buffer4[local_idx] += result_buffer4[local_idx + 1];
+            result_buffer5[local_idx] += result_buffer5[local_idx + 1];
+            result_buffer6[local_idx] += result_buffer6[local_idx + 1];
           }
         }
 
@@ -466,144 +493,6 @@ SolverCG2<VectorType>::solve(const MatrixType &        A,
                              const VectorType &        b,
                              const PreconditionerType &preconditioner)
 {
-#ifdef BLUB
-  using number = typename VectorType::value_type;
-
-  SolverControl::State conv = SolverControl::iterate;
-
-  LogStream::Prefix prefix("cg");
-  
-
-  // Memory allocation
-  typename VectorMemory<VectorType>::Pointer g_pointer(this->memory);
-  typename VectorMemory<VectorType>::Pointer d_pointer(this->memory);
-  typename VectorMemory<VectorType>::Pointer h_pointer(this->memory);
-
-  // define some aliases for simpler access
-  VectorType &g = *g_pointer;
-  VectorType &d = *d_pointer;
-  VectorType &h = *h_pointer;
-
-  // Should we build the matrix for eigenvalue computations?
-  const bool do_eigenvalues =
-    !condition_number_signal.empty() || !all_condition_numbers_signal.empty() ||
-    !eigenvalues_signal.empty() || !all_eigenvalues_signal.empty();
-
-  // vectors used for eigenvalue
-  // computations
-  std::vector<typename VectorType::value_type> diagonal;
-  std::vector<typename VectorType::value_type> offdiagonal;
-
-  int    it  = 0;
-  double res = -std::numeric_limits<double>::max();
-
-  typename VectorType::value_type eigen_beta_alpha = 0;
-
-  // resize the vectors, but do not set
-  // the values since they'd be overwritten
-  // soon anyway.
-  g.reinit(x, true);
-  d.reinit(x, true);
-  h.reinit(x, true);
-
-  number gh, beta;
-
-  // compute residual. if vector is
-  // zero, then short-circuit the
-  // full computation
-  if (!x.all_zero())
-    {
-      A.vmult(g, x);
-      g.add(-1., b);
-    }
-  else
-    g.equ(-1., b);
-  res = g.l2_norm();
-
-  conv = this->iteration_status(0, res, x);
-  if (conv != SolverControl::iterate)
-    return;
-
-  if (std::is_same<PreconditionerType, PreconditionIdentity>::value == false)
-    {
-      preconditioner.vmult(h, g);
-
-      d.equ(-1., h);
-
-      gh = g * h;
-    }
-  else
-    {
-      d.equ(-1., g);
-      gh = res * res;
-    }
-
-  while (conv == SolverControl::iterate)
-    {
-      it++;
-      A.vmult(h, d);
-
-      number alpha = d * h;
-      Assert(std::abs(alpha) != 0., ExcDivideByZero());
-      alpha = gh / alpha;
-
-      x.add(alpha, d);
-      res = std::sqrt(std::abs(g.add_and_dot(alpha, h, g)));
-
-      print_vectors(it, x, g, d);
-
-      conv = this->iteration_status(it, res, x);
-      if (conv != SolverControl::iterate)
-        break;
-
-      if (std::is_same<PreconditionerType, PreconditionIdentity>::value ==
-          false)
-        {
-          preconditioner.vmult(h, g);
-
-          beta = gh;
-          Assert(std::abs(beta) != 0., ExcDivideByZero());
-          gh   = g * h;
-          beta = gh / beta;
-          d.sadd(beta, -1., h);
-        }
-      else
-        {
-          beta = gh;
-          gh   = res * res;
-          beta = gh / beta;
-          d.sadd(beta, -1., g);
-        }
-
-      this->coefficients_signal(alpha, beta);
-      // set up the vectors
-      // containing the diagonal
-      // and the off diagonal of
-      // the projected matrix.
-      if (do_eigenvalues)
-        {
-          diagonal.push_back(number(1.) / alpha + eigen_beta_alpha);
-          eigen_beta_alpha = beta / alpha;
-          offdiagonal.push_back(std::sqrt(beta) / alpha);
-        }
-      compute_eigs_and_cond(diagonal,
-                            offdiagonal,
-                            all_eigenvalues_signal,
-                            all_condition_numbers_signal);
-    }
-
-  compute_eigs_and_cond(diagonal,
-                        offdiagonal,
-                        eigenvalues_signal,
-                        condition_number_signal);
-
-  // in case of failure: throw exception
-  if (conv != SolverControl::success)
-    AssertThrow(false, SolverControl::NoConvergence(it, res));
-  // otherwise exit as normal
-  
-#else
-  
     dealii::SolverControl::State conv = dealii::SolverControl::iterate;
     using number = typename VectorType::value_type;
 
@@ -613,98 +502,106 @@ SolverCG2<VectorType>::solve(const MatrixType &        A,
     typename dealii::VectorMemory<VectorType>::Pointer h_pointer(this->memory);
 
     // define some aliases for simpler access
-    VectorType &r = *g_pointer;
-    VectorType &p = *d_pointer;
-    VectorType &v = *h_pointer;
+    VectorType &g = *g_pointer;
+    VectorType &d = *d_pointer;
+    VectorType &h = *h_pointer;
 
     int    it  = 0;
     double res_norm = -std::numeric_limits<double>::max();
 
     // resize the vectors, but do not set the values since they'd be
     // overwritten soon anyway.
-    r.reinit(x, true);
-    p.reinit(x, true);
-    v.reinit(x, true);
+    g.reinit(x/*, true*/);
+    d.reinit(x/*, true*/);
+    h.reinit(x/*, true*/);
 
     // compute residual. if vector is zero, then short-circuit the full
     // computation
     if (!x.all_zero())
       {
-        A.vmult(r, x);
-        r.add(-1., b);
+        A.vmult(g, x);
+        g.add(-1., b);
       }
     else
-      r.equ(-1., b);
-    res_norm = r.l2_norm();
+      g.equ(-1., b);
+    res_norm = g.l2_norm();
 
     conv = this->iteration_status(0, res_norm, x);
     if (conv != dealii::SolverControl::iterate)
       return;
 
-  if (std::is_same<PreconditionerType, PreconditionIdentity>::value == false)
-    {
-      preconditioner.vmult(v, r);
-      p.equ(-1., v);
-    }
-  else
-    {
-      p.equ(-1., r);
-    }
-
-    number alpha = 0.0; //(r * p) / (p * v);
-    number beta  = 0.0;
+    number alpha = 0.0; //(g * h) / (d * h);
+    number beta  = 0.0; //(res_norm * res_norm) / (g * h);
 
     while (conv == dealii::SolverControl::iterate)
       {
         it++;
         
-        using ::dealii::CUDAWrappers::block_size;
-        using ::dealii::CUDAWrappers::chunk_size;
         using size_type = types::global_dof_index;
         
-        const int n_blocks = 1 + x.size() / (chunk_size * block_size);
-        my_kernel::update_a<double>
-          <<<n_blocks, block_size>>>(p.get_values (), r.get_values (), 
-                v.get_values (), x.get_values (), preconditioner.get_vector().get_values (), alpha, beta, x.size() );
+        const int n_blocks = 1 + x.size() / (::dealii::CUDAWrappers::chunk_size * ::dealii::CUDAWrappers::block_size);
         
-        A.vmult(v, p);
+        //if(alpha == 0.0)
+        //  my_kernel::update_a0<double>
+        //    <<<n_blocks, ::dealii::CUDAWrappers::block_size>>>(d.get_values (), g.get_values (), h.get_values (), x.get_values (), preconditioner.get_vector().get_values (), alpha, beta, x.size() );
+        //else
+          my_kernel::update_a<double>
+            <<<n_blocks, ::dealii::CUDAWrappers::block_size>>>(d.get_values (), g.get_values (), h.get_values (), x.get_values (), preconditioner.get_vector().get_values (), alpha, beta, x.size() );
+        
+        //std::cout << g.l2_norm() << " " << res_norm << std::endl;
+        A.vmult(h, d);
+        
+        double* results_dev; 
+        cudaError_t error_code = cudaMalloc(&results_dev, 7 * sizeof(double));
+        AssertCuda(error_code);
+        
+        error_code = cudaMemset(results_dev, 0, 7 * sizeof(number));
+        AssertCuda(error_code);
+        
+        my_kernel::update_b<double> <<<dim3(n_blocks, 1), dim3(::dealii::CUDAWrappers::block_size)>>>
+            (results_dev, d.get_values (), g.get_values (), h.get_values (), preconditioner.get_vector().get_values (), x.size());
         
         double results[7];
-        double* results_dev; 
-        cudaMalloc(&results_dev, 7 * sizeof(double));
-        
-        my_kernel::update_b<double> <<<dim3(n_blocks, 1), dim3(block_size)>>>
-            (results_dev, p.get_values (), r.get_values (), v.get_values (), preconditioner.get_vector().get_values (), x.size());
-        
         cudaMemcpy(results, results_dev, 7 * sizeof(double), cudaMemcpyDeviceToHost);
+        cudaFree(results_dev);
+        
+        for(unsigned int i = 0; i < 7; i++)
+          std::cout << results[i] << " ";
+        std::cout << std::endl;
+        
+        std::cout << d * h  << " " << h*h <<  " " << g*h   << " " << g*g << std::endl;
+        
+        {
+            
+        ::dealii::LinearAlgebra::CUDAWrappers::kernel::double_vector_reduction<
+          Number,
+          ::dealii::LinearAlgebra::CUDAWrappers::kernel::DotProduct<Number>>
+          <<<dim3(n_blocks, 1), dim3(block_size)>>>(result_device,
+                                                    data.values_dev.get(),
+                                                    v_data.values_dev.get(),
+                                                    static_cast<unsigned int>(
+                                                      size);
+        }
         
         Assert(std::abs(results[0]) != 0., dealii::ExcDivideByZero());
-        alpha = results[4] / results[0];
+        alpha = results[6] / results[0];
 
-        res_norm = std::sqrt(results[1] + 2*alpha*results[2] + alpha*alpha*results[3]);
-#ifdef IGNORE_FAILURE
-        if (it == 10)
-#else
+        res_norm = std::sqrt(results[3] + 2*alpha*results[2] + alpha*alpha*results[1]);
         conv = this->iteration_status(it, res_norm, x);
         if (conv != dealii::SolverControl::iterate)    
-#endif
           {
-            x.add(alpha, p);
+            x.add(alpha, d);
             break;
           }
 
-        beta = (results[4] - 2 * alpha * results[5] + alpha * alpha * results[6])/results[4];
+        beta = alpha * (results[4] + alpha * results[5]) / results[6];
       }
 
-#ifdef IGNORE_FAILURE
     // in case of failure: throw exception
-    //if (conv != dealii::SolverControl::success)
-    //  AssertThrow(false, dealii::SolverControl::NoConvergence(it, res_norm));
+    if (conv != dealii::SolverControl::success)
+      AssertThrow(false, dealii::SolverControl::NoConvergence(it, res_norm));
     // otherwise exit as normal
-#endif
     
-#endif
-  
 }
 
 

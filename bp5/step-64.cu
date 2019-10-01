@@ -564,11 +564,12 @@ namespace Step64
     preconditioner.get_vector().reinit(system_rhs_dev);
     preconditioner.get_vector() = 1.;
 
+    if(false)
     for (unsigned int i=0; i<10; ++i)
       {
         Timer time;
-        IterationNumberControl solver_control(200,
-                                              0.0 * system_rhs_dev.l2_norm());
+        IterationNumberControl solver_control(20,
+                                              1e-6 * system_rhs_dev.l2_norm());
         SolverCG<LinearAlgebra::distributed::Vector<double, MemorySpace::CUDA>> cg(
                                                                                    solver_control);
         solution_dev = 0;
@@ -584,11 +585,11 @@ namespace Step64
 
     pcout << std::endl;
 
-    for (unsigned int i=0; i<10; ++i)
+    for (unsigned int i=0; i<1; ++i)
       {
         Timer time;
-        IterationNumberControl solver_control(200,
-                                              0.0 * system_rhs_dev.l2_norm());
+        IterationNumberControl solver_control(60,
+                                              1e-6 * system_rhs_dev.l2_norm());
         SolverCG2<LinearAlgebra::distributed::Vector<double, MemorySpace::CUDA>> cg(
                                                                                    solver_control);
         solution_dev = 0;
