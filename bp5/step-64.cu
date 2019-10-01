@@ -417,7 +417,7 @@ namespace Step64
     const LinearAlgebra::distributed::Vector<double, MemorySpace::CUDA> &src)
     const
   {
-    dst = 0.;
+    //dst = 0.;
     LocalHelmholtzOperatorMerged<dim, fe_degree>
       helmholtz_operator(coef.get_values(), n_owned_cells);
     mf_data.cell_loop(helmholtz_operator, src, dst);
@@ -568,7 +568,7 @@ namespace Step64
     for (unsigned int i=0; i<10; ++i)
       {
         Timer time;
-        IterationNumberControl solver_control(20,
+        IterationNumberControl solver_control(200,
                                               1e-6 * system_rhs_dev.l2_norm());
         SolverCG<LinearAlgebra::distributed::Vector<double, MemorySpace::CUDA>> cg(
                                                                                    solver_control);
@@ -585,10 +585,10 @@ namespace Step64
 
     pcout << std::endl;
 
-    for (unsigned int i=0; i<1; ++i)
+    for (unsigned int i=0; i<10; ++i)
       {
         Timer time;
-        IterationNumberControl solver_control(60,
+        IterationNumberControl solver_control(200,
                                               1e-6 * system_rhs_dev.l2_norm());
         SolverCG2<LinearAlgebra::distributed::Vector<double, MemorySpace::CUDA>> cg(
                                                                                    solver_control);

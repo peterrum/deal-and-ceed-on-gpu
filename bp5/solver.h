@@ -405,7 +405,6 @@ using size_type = types::global_dof_index;
           }
 
         if (local_idx < 32)
-        {
           if (::dealii::CUDAWrappers::block_size >= 64)
           {
             result_buffer0[local_idx] += result_buffer0[local_idx + 32];
@@ -416,6 +415,7 @@ using size_type = types::global_dof_index;
             result_buffer5[local_idx] += result_buffer5[local_idx + 32];
             result_buffer6[local_idx] += result_buffer6[local_idx + 32];
           }
+        if (local_idx < 16)
           if (::dealii::CUDAWrappers::block_size >= 32)
           {
             result_buffer0[local_idx] += result_buffer0[local_idx + 16];
@@ -426,6 +426,7 @@ using size_type = types::global_dof_index;
             result_buffer5[local_idx] += result_buffer5[local_idx + 16];
             result_buffer6[local_idx] += result_buffer6[local_idx + 16];
           }
+        if (local_idx < 8)
           if (::dealii::CUDAWrappers::block_size >= 16)
           {
             result_buffer0[local_idx] += result_buffer0[local_idx + 8];
@@ -436,6 +437,7 @@ using size_type = types::global_dof_index;
             result_buffer5[local_idx] += result_buffer5[local_idx + 8];
             result_buffer6[local_idx] += result_buffer6[local_idx + 8];
           }
+        if (local_idx < 4)
           if (::dealii::CUDAWrappers::block_size >= 8)
           {
             result_buffer0[local_idx] += result_buffer0[local_idx + 4];
@@ -446,6 +448,7 @@ using size_type = types::global_dof_index;
             result_buffer5[local_idx] += result_buffer5[local_idx + 4];
             result_buffer6[local_idx] += result_buffer6[local_idx + 4];
           }
+        if (local_idx < 2)
           if (::dealii::CUDAWrappers::block_size >= 4)
           {
             result_buffer0[local_idx] += result_buffer0[local_idx + 2];
@@ -456,6 +459,7 @@ using size_type = types::global_dof_index;
             result_buffer5[local_idx] += result_buffer5[local_idx + 2];
             result_buffer6[local_idx] += result_buffer6[local_idx + 2];
           }
+        if (local_idx < 1)
           if (::dealii::CUDAWrappers::block_size >= 2)
           {
             result_buffer0[local_idx] += result_buffer0[local_idx + 1];
@@ -466,7 +470,6 @@ using size_type = types::global_dof_index;
             result_buffer5[local_idx] += result_buffer5[local_idx + 1];
             result_buffer6[local_idx] += result_buffer6[local_idx + 1];
           }
-        }
 
         if (local_idx == 0)
         {
@@ -564,24 +567,6 @@ SolverCG2<VectorType>::solve(const MatrixType &        A,
         double results[7];
         cudaMemcpy(results, results_dev, 7 * sizeof(double), cudaMemcpyDeviceToHost);
         cudaFree(results_dev);
-        
-        for(unsigned int i = 0; i < 7; i++)
-          std::cout << results[i] << " ";
-        std::cout << std::endl;
-        
-        std::cout << d * h  << " " << h*h <<  " " << g*h   << " " << g*g << std::endl;
-        
-        {
-            
-        ::dealii::LinearAlgebra::CUDAWrappers::kernel::double_vector_reduction<
-          Number,
-          ::dealii::LinearAlgebra::CUDAWrappers::kernel::DotProduct<Number>>
-          <<<dim3(n_blocks, 1), dim3(block_size)>>>(result_device,
-                                                    data.values_dev.get(),
-                                                    v_data.values_dev.get(),
-                                                    static_cast<unsigned int>(
-                                                      size);
-        }
         
         Assert(std::abs(results[0]) != 0., dealii::ExcDivideByZero());
         alpha = results[6] / results[0];
