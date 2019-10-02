@@ -107,8 +107,8 @@ namespace Step64
     {}
 
     __device__ void
-    operator()(CUDAWrappers::FEEvaluationGL<dim, fe_degree> *fe_eval,
-               const unsigned int                            q) const;
+    operator()(CUDAWrappers::FEEvaluation<dim, fe_degree> *fe_eval,
+               const unsigned int                          q) const;
 
   private:
     double coef;
@@ -118,133 +118,10 @@ namespace Step64
   template <int dim, int fe_degree>
   __device__ void
   HelmholtzOperatorQuad<dim, fe_degree>::
-  operator()(CUDAWrappers::FEEvaluationGL<dim, fe_degree> *fe_eval,
-             const unsigned int                            q) const
+  operator()(CUDAWrappers::FEEvaluation<dim, fe_degree> *fe_eval,
+             const unsigned int                          q) const
   {
-    // fe_eval->submit_value(coef * fe_eval->get_value(q), q);
     fe_eval->submit_gradient(fe_eval->get_gradient(q), q);
-  }
-
-
-  template <int dim, int fe_degree>
-  class LocalHelmholtzOperator
-  {
-  public:
-    LocalHelmholtzOperator(double *coefficient, bool do_zero_out = true)
-      : coef(coefficient)
-      , do_zero_out(do_zero_out)
-    {}
-
-    __device__ void
-    operator()(
-      const unsigned int                                          cell,
-      const typename CUDAWrappers::MatrixFree<dim, double>::Data *gpu_data,
-      CUDAWrappers::SharedData<dim, double> *                     shared_data,
-      const double *                                              src,
-      double *                                                    dst) const;
-
-    static const unsigned int n_dofs_1d    = fe_degree + 1;
-    static const unsigned int n_local_dofs = Utilities::pow(fe_degree + 1, dim);
-    static const unsigned int n_q_points   = Utilities::pow(fe_degree + 1, dim);
-
-  private:
-    double *coef;
-
-  public:
-    bool do_zero_out;
-  };
-
-
-  template <int dim, int fe_degree>
-  __device__ void
-  LocalHelmholtzOperator<dim, fe_degree>::operator()(
-    const unsigned int                                          cell,
-    const typename CUDAWrappers::MatrixFree<dim, double>::Data *gpu_data,
-    CUDAWrappers::SharedData<dim, double> *                     shared_data,
-    const double *                                              src,
-    double *                                                    dst) const
-  {
-    const unsigned int pos = CUDAWrappers::local_q_point_id<dim, double>(
-      cell, gpu_data, n_dofs_1d, n_q_points);
-
-    CUDAWrappers::FEEvaluationGL<dim, fe_degree, fe_degree + 1, 1, double>
-      fe_eval(cell, gpu_data, shared_data);
-    fe_eval.read_dof_values(src);
-    fe_eval.evaluate(false, true);
-    fe_eval.apply_quad_point_operations(
-      HelmholtzOperatorQuad<dim, fe_degree>(coef[pos]));
-    fe_eval.integrate(false, true);
-    fe_eval.distribute_local_to_global(dst);
-  }
-
-
-  template <int dim, int fe_degree>
-  class HelmholtzOperator
-  {
-  public:
-    HelmholtzOperator(const DoFHandler<dim> &          dof_handler,
-                      const AffineConstraints<double> &constraints);
-
-    void
-    vmult(LinearAlgebra::distributed::Vector<double, MemorySpace::CUDA> &dst,
-          const LinearAlgebra::distributed::Vector<double, MemorySpace::CUDA>
-            &src) const;
-
-    void
-    initialize_dof_vector(
-      LinearAlgebra::distributed::Vector<double, MemorySpace::CUDA> &vec) const
-    {
-      mf_data.initialize_dof_vector(vec);
-    }
-
-  private:
-    CUDAWrappers::MatrixFree<dim, double>       mf_data;
-    LinearAlgebra::CUDAWrappers::Vector<double> coef;
-  };
-
-
-
-  template <int dim, int fe_degree>
-  HelmholtzOperator<dim, fe_degree>::HelmholtzOperator(
-    const DoFHandler<dim> &          dof_handler,
-    const AffineConstraints<double> &constraints)
-  {
-    MappingQGeneric<dim> mapping(fe_degree);
-    typename CUDAWrappers::MatrixFree<dim, double>::AdditionalData
-      additional_data;
-    additional_data.mapping_update_flags = update_values | update_gradients |
-                                           update_JxW_values |
-                                           update_quadrature_points;
-    
-    additional_data.use_ghost_coloring = true;
-
-    const QGaussLobatto<1> quad(fe_degree + 1);
-    mf_data.reinit(mapping, dof_handler, constraints, quad, additional_data);
-
-
-    const unsigned int n_owned_cells =
-      dynamic_cast<const parallel::Triangulation<dim> *>(
-        &dof_handler.get_triangulation())
-        ->n_locally_owned_active_cells();
-    coef.reinit(Utilities::pow(fe_degree + 1, dim) * n_owned_cells);
-
-    const VaryingCoefficientFunctor<dim, fe_degree> functor(coef.get_values());
-    mf_data.evaluate_coefficients(functor);
-  }
-
-
-  template <int dim, int fe_degree>
-  void
-  HelmholtzOperator<dim, fe_degree>::vmult(
-    LinearAlgebra::distributed::Vector<double, MemorySpace::CUDA> &      dst,
-    const LinearAlgebra::distributed::Vector<double, MemorySpace::CUDA> &src)
-    const
-  {
-    dst = 0.;
-    LocalHelmholtzOperator<dim, fe_degree> helmholtz_operator(
-      coef.get_values());
-    mf_data.cell_loop(helmholtz_operator, src, dst);
-    mf_data.copy_constrained_values(src, dst);
   }
 
 
@@ -349,7 +226,7 @@ namespace Step64
       cell, gpu_data, n_dofs_1d, n_q_points);
     const unsigned int offset = n_q_points * n_cells;
 
-    CUDAWrappers::FEEvaluationGL<dim, fe_degree, fe_degree + 1, 1, double>
+    CUDAWrappers::FEEvaluation<dim, fe_degree, fe_degree + 1, 1, double>
       fe_eval(cell, gpu_data, shared_data);
     fe_eval.read_dof_values(src);
     fe_eval.evaluate(false, true);
@@ -429,6 +306,9 @@ namespace Step64
                                            update_JxW_values |
                                            update_quadrature_points;
     const QGaussLobatto<1> quad(fe_degree + 1);
+
+    additional_data.use_ghost_coloring = true;
+
     mf_data.reinit(mapping, dof_handler, constraints, quad, additional_data);
 
     n_owned_cells = dynamic_cast<const parallel::Triangulation<dim> *>(
