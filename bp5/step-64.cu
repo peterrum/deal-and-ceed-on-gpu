@@ -351,10 +351,10 @@ namespace Step64
     HelmholtzProblem();
 
     void
-    run(unsigned int cycle_min, 
-        unsigned int cycle_max, 
-        unsigned int n_iterations, 
-        unsigned int n_repetitions, 
+    run(unsigned int cycle_min,
+        unsigned int cycle_max,
+        unsigned int n_iterations,
+        unsigned int n_repetitions,
         unsigned int min_run);
 
   private:
@@ -365,8 +365,8 @@ namespace Step64
     assemble_rhs();
 
     void
-    solve(unsigned int n_iterations, 
-          unsigned int n_repetitions, 
+    solve(unsigned int n_iterations,
+          unsigned int n_repetitions,
           unsigned int min_run);
 
     void
@@ -489,7 +489,7 @@ namespace Step64
 
   template <int dim, int fe_degree>
   void
-  HelmholtzProblem<dim, fe_degree>::solve(unsigned int n_iterations, 
+  HelmholtzProblem<dim, fe_degree>::solve(unsigned int n_iterations,
                                           unsigned int n_repetitions,
                                           unsigned int min_run)
   {
@@ -499,101 +499,114 @@ namespace Step64
     preconditioner.get_vector().reinit(system_rhs_dev);
     preconditioner.get_vector() = 1.;
 
-    if(min_run == 0)
-    { 
-    double throughput_max = std::numeric_limits<double>::min();
-
-    for (unsigned int i = 0; i < n_repetitions; ++i)
+    if (min_run == 0)
       {
-        system_matrix_dev->do_zero_out = true;
+        double throughput_max = std::numeric_limits<double>::min();
 
-        Timer                  time;
-        IterationNumberControl solver_control(n_iterations,
-                                              1e-6 * system_rhs_dev.l2_norm());
-        SolverCG<LinearAlgebra::distributed::Vector<double, MemorySpace::CUDA>>
-          cg(solver_control);
-        solution_dev = 0;
-        cg.solve(*system_matrix_dev,
-                 solution_dev,
-                 system_rhs_dev,
-                 preconditioner);
+        for (unsigned int i = 0; i < n_repetitions; ++i)
+          {
+            system_matrix_dev->do_zero_out = true;
 
-        cudaDeviceSynchronize();
+            Timer                  time;
+            IterationNumberControl solver_control(n_iterations,
+                                                  1e-6 *
+                                                    system_rhs_dev.l2_norm());
+            SolverCG<
+              LinearAlgebra::distributed::Vector<double, MemorySpace::CUDA>>
+              cg(solver_control);
+            solution_dev = 0;
+            cg.solve(*system_matrix_dev,
+                     solution_dev,
+                     system_rhs_dev,
+                     preconditioner);
 
-        const double measured_time       = time.wall_time();
-        const double measured_throughput = 
-               static_cast<double>(dof_handler.n_dofs()) * solver_control.last_step() / 
-                measured_time / Utilities::MPI::n_mpi_processes(MPI_COMM_WORLD);
+            cudaDeviceSynchronize();
 
-        throughput_max = std::max(throughput_max, measured_throughput);
+            const double measured_time = time.wall_time();
+            const double measured_throughput =
+              static_cast<double>(dof_handler.n_dofs()) *
+              solver_control.last_step() / measured_time /
+              Utilities::MPI::n_mpi_processes(MPI_COMM_WORLD);
 
-        pcout << "   Solved in " << solver_control.last_step()
-              << " iterations with time " << measured_time
-              << " and DoFs/s " << measured_throughput
-              << " norm " << solution_dev.l2_norm() << std::endl;
+            throughput_max = std::max(throughput_max, measured_throughput);
+
+            pcout << "   Solved in " << solver_control.last_step()
+                  << " iterations with time " << measured_time << " and DoFs/s "
+                  << measured_throughput << " norm " << solution_dev.l2_norm()
+                  << std::endl;
+          }
+        pcout << "pcg-standard " << dof_handler.n_dofs() << " "
+              << throughput_max << std::endl
+              << std::endl;
       }
-      pcout << "pcg-standard " << dof_handler.n_dofs() << " " << throughput_max << std::endl << std::endl;
-    }
 
     {
-    double throughput_max = std::numeric_limits<double>::min();
+      double throughput_max = std::numeric_limits<double>::min();
 
-    for (unsigned int i = 0; i < n_repetitions; ++i)
-      {
-        system_matrix_dev->do_zero_out = false;
-        Timer                  time;
-        IterationNumberControl solver_control(n_iterations,
-                                              1e-6 * system_rhs_dev.l2_norm());
-        SolverCG2<LinearAlgebra::distributed::Vector<double, MemorySpace::CUDA>>
-          cg(solver_control);
-        solution_dev = 0;
-        cg.solve(*system_matrix_dev,
-                 solution_dev,
-                 system_rhs_dev,
-                 preconditioner);
+      for (unsigned int i = 0; i < n_repetitions; ++i)
+        {
+          system_matrix_dev->do_zero_out = false;
+          Timer                  time;
+          IterationNumberControl solver_control(n_iterations,
+                                                1e-6 *
+                                                  system_rhs_dev.l2_norm());
+          SolverCG2<
+            LinearAlgebra::distributed::Vector<double, MemorySpace::CUDA>>
+            cg(solver_control);
+          solution_dev = 0;
+          cg.solve(*system_matrix_dev,
+                   solution_dev,
+                   system_rhs_dev,
+                   preconditioner);
 
-        cudaDeviceSynchronize();
+          cudaDeviceSynchronize();
 
-        const double measured_time       = time.wall_time();
-        const double measured_throughput = 
-               static_cast<double>(dof_handler.n_dofs()) * solver_control.last_step() / 
-                measured_time / Utilities::MPI::n_mpi_processes(MPI_COMM_WORLD);
+          const double measured_time = time.wall_time();
+          const double measured_throughput =
+            static_cast<double>(dof_handler.n_dofs()) *
+            solver_control.last_step() / measured_time /
+            Utilities::MPI::n_mpi_processes(MPI_COMM_WORLD);
 
-        throughput_max = std::max(throughput_max, measured_throughput);
+          throughput_max = std::max(throughput_max, measured_throughput);
 
-        pcout << "   Solved in " << solver_control.last_step()
-              << " iterations with time " << measured_time
-              << " and DoFs/s " << measured_throughput
-              << " norm " << solution_dev.l2_norm() << std::endl;
-      }
-      pcout << "pcg-merged " << dof_handler.n_dofs() << " " << throughput_max << std::endl << std::endl;
-   }
-
-   if(min_run == 0)
-   {
-    double throughput_max = std::numeric_limits<double>::min();
-
-    for (unsigned int i = 0; i < n_repetitions; ++i)
-      {
-        Timer time;
-
-        for (unsigned int t = 0; t < n_iterations; ++t)
-          system_matrix_dev->vmult(system_rhs_dev, solution_dev);
-
-        cudaDeviceSynchronize();
-
-        const double measured_time       = time.wall_time();
-        const double measured_throughput = 
-               static_cast<double>(dof_handler.n_dofs()) * n_iterations / 
-                measured_time / Utilities::MPI::n_mpi_processes(MPI_COMM_WORLD);
-
-        throughput_max = std::max(throughput_max, measured_throughput);
-
-        pcout << "   " << n_iterations << " mat-vecs in time " << measured_time
-              << " and DoFs/s " << measured_throughput << std::endl;
-      }
-      pcout << "vmult " << dof_handler.n_dofs() << " " << throughput_max << std::endl << std::endl;
+          pcout << "   Solved in " << solver_control.last_step()
+                << " iterations with time " << measured_time << " and DoFs/s "
+                << measured_throughput << " norm " << solution_dev.l2_norm()
+                << std::endl;
+        }
+      pcout << "pcg-merged " << dof_handler.n_dofs() << " " << throughput_max
+            << std::endl
+            << std::endl;
     }
+
+    if (min_run == 0)
+      {
+        double throughput_max = std::numeric_limits<double>::min();
+
+        for (unsigned int i = 0; i < n_repetitions; ++i)
+          {
+            Timer time;
+
+            for (unsigned int t = 0; t < n_iterations; ++t)
+              system_matrix_dev->vmult(system_rhs_dev, solution_dev);
+
+            cudaDeviceSynchronize();
+
+            const double measured_time = time.wall_time();
+            const double measured_throughput =
+              static_cast<double>(dof_handler.n_dofs()) * n_iterations /
+              measured_time / Utilities::MPI::n_mpi_processes(MPI_COMM_WORLD);
+
+            throughput_max = std::max(throughput_max, measured_throughput);
+
+            pcout << "   " << n_iterations << " mat-vecs in time "
+                  << measured_time << " and DoFs/s " << measured_throughput
+                  << std::endl;
+          }
+        pcout << "vmult " << dof_handler.n_dofs() << " " << throughput_max
+              << std::endl
+              << std::endl;
+      }
 
     LinearAlgebra::ReadWriteVector<double> rw_vector(locally_owned_dofs);
     rw_vector.import(solution_dev, VectorOperation::insert);
@@ -656,10 +669,10 @@ namespace Step64
 
   template <int dim, int fe_degree>
   void
-  HelmholtzProblem<dim, fe_degree>::run(unsigned int cycle_min, 
-                                        unsigned int cycle_max, 
-                                        unsigned int n_iterations, 
-                                        unsigned int n_repetitions, 
+  HelmholtzProblem<dim, fe_degree>::run(unsigned int cycle_min,
+                                        unsigned int cycle_max,
+                                        unsigned int n_iterations,
+                                        unsigned int n_repetitions,
                                         unsigned int min_run)
   {
     for (unsigned int cycle = cycle_min; cycle <= cycle_max; ++cycle)
@@ -692,7 +705,8 @@ namespace Step64
         pcout << "   Number of active cells:       "
               << triangulation.n_global_active_cells() << std::endl
               << "   Number of degrees of freedom: " << dof_handler.n_dofs()
-              << std::endl << std::endl;
+              << std::endl
+              << std::endl;
 
         assemble_rhs();
         solve(n_iterations, n_repetitions, min_run);
@@ -715,40 +729,41 @@ main(int argc, char *argv[])
       ConditionalOStream pcout(
         std::cout, Utilities::MPI::this_mpi_process(MPI_COMM_WORLD) == 0);
 
-      unsigned int min_run       = 1; 
-      unsigned int cycle_min     = 11; 
-      unsigned int cycle_max     = 11; 
-      unsigned int n_iterations  = 200; 
+      unsigned int min_run       = 1;
+      unsigned int cycle_min     = 11;
+      unsigned int cycle_max     = 11;
+      unsigned int n_iterations  = 200;
       unsigned int n_repetitions = 10;
 
-      if(argc >=1)
+      if (argc >= 1)
         n_repetitions = atoi(argv[1]);
 
-      if(argc >=2)
+      if (argc >= 2)
         n_repetitions = atoi(argv[2]);
 
-      if(argc >=3)
+      if (argc >= 3)
         n_iterations = atoi(argv[3]);
 
-      if(argc >=4)
+      if (argc >= 4)
         cycle_min = cycle_max = atoi(argv[4]);
 
-      if(argc >=5)
+      if (argc >= 5)
         cycle_max = atoi(argv[5]);
 
       pcout << std::endl
-        << "deal.II info:" << std::endl
-        << std::endl
-        << "  deal.II git version " << DEAL_II_GIT_SHORTREV << " on branch " << DEAL_II_GIT_BRANCH
-        << std::endl
-        << "  with vectorization level = " << DEAL_II_COMPILER_VECTORIZATION_LEVEL
-        << std::endl;
+            << "deal.II info:" << std::endl
+            << std::endl
+            << "  deal.II git version " << DEAL_II_GIT_SHORTREV << " on branch "
+            << DEAL_II_GIT_BRANCH << std::endl
+            << "  with vectorization level = "
+            << DEAL_II_COMPILER_VECTORIZATION_LEVEL << std::endl;
 
 
       int         n_devices       = 0;
       cudaError_t cuda_error_code = cudaGetDeviceCount(&n_devices);
       AssertCuda(cuda_error_code);
-      pcout << "  number of CUDA devices = " << n_devices << std::endl << std::endl;
+      pcout << "  number of CUDA devices = " << n_devices << std::endl
+            << std::endl;
       const unsigned int my_mpi_id =
         Utilities::MPI::this_mpi_process(MPI_COMM_WORLD);
       const int device_id = my_mpi_id % n_devices;
@@ -756,7 +771,8 @@ main(int argc, char *argv[])
       AssertCuda(cuda_error_code);
 
       HelmholtzProblem<3, 4> helmholtz_problem;
-      helmholtz_problem.run(cycle_min, cycle_max, n_iterations, n_repetitions, min_run);
+      helmholtz_problem.run(
+        cycle_min, cycle_max, n_iterations, n_repetitions, min_run);
     }
   catch (std::exception &exc)
     {
