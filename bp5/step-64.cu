@@ -350,7 +350,11 @@ namespace Step64
     HelmholtzProblem();
 
     void
-    run();
+    run(unsigned int cycle_min, 
+        unsigned int cycle_max, 
+        unsigned int n_iterations, 
+        unsigned int n_repetitions, 
+        unsigned int min_run);
 
   private:
     void
@@ -360,7 +364,9 @@ namespace Step64
     assemble_rhs();
 
     void
-    solve();
+    solve(unsigned int n_iterations, 
+          unsigned int n_repetitions, 
+          unsigned int min_run);
 
     void
     output_results(const unsigned int cycle) const;
@@ -482,7 +488,9 @@ namespace Step64
 
   template <int dim, int fe_degree>
   void
-  HelmholtzProblem<dim, fe_degree>::solve()
+  HelmholtzProblem<dim, fe_degree>::solve(unsigned int n_iterations, 
+                                          unsigned int n_repetitions,
+                                          unsigned int min_run)
   {
     DiagonalMatrix<
       LinearAlgebra::distributed::Vector<double, MemorySpace::CUDA>>
@@ -490,15 +498,16 @@ namespace Step64
     preconditioner.get_vector().reinit(system_rhs_dev);
     preconditioner.get_vector() = 1.;
 
+    if(min_run == 0)
     { 
     double throughput_max = std::numeric_limits<double>::min();
 
-    for (unsigned int i = 0; i < 10; ++i)
+    for (unsigned int i = 0; i < n_repetitions; ++i)
       {
         system_matrix_dev->do_zero_out = true;
 
         Timer                  time;
-        IterationNumberControl solver_control(200,
+        IterationNumberControl solver_control(n_iterations,
                                               1e-6 * system_rhs_dev.l2_norm());
         SolverCG<LinearAlgebra::distributed::Vector<double, MemorySpace::CUDA>>
           cg(solver_control);
@@ -528,11 +537,11 @@ namespace Step64
     {
     double throughput_max = std::numeric_limits<double>::min();
 
-    for (unsigned int i = 0; i < 10; ++i)
+    for (unsigned int i = 0; i < n_repetitions; ++i)
       {
         system_matrix_dev->do_zero_out = false;
         Timer                  time;
-        IterationNumberControl solver_control(200,
+        IterationNumberControl solver_control(n_iterations,
                                               1e-6 * system_rhs_dev.l2_norm());
         SolverCG2<LinearAlgebra::distributed::Vector<double, MemorySpace::CUDA>>
           cg(solver_control);
@@ -559,26 +568,27 @@ namespace Step64
       pcout << "pcg-merged " << dof_handler.n_dofs() << " " << throughput_max << std::endl << std::endl;
    }
 
+   if(min_run == 0)
    {
     double throughput_max = std::numeric_limits<double>::min();
 
-    for (unsigned int i = 0; i < 10; ++i)
+    for (unsigned int i = 0; i < n_repetitions; ++i)
       {
         Timer time;
 
-        for (unsigned int t = 0; t < 200; ++t)
+        for (unsigned int t = 0; t < n_iterations; ++t)
           system_matrix_dev->vmult(system_rhs_dev, solution_dev);
 
         cudaDeviceSynchronize();
 
         const double measured_time       = time.wall_time();
         const double measured_throughput = 
-               static_cast<double>(dof_handler.n_dofs()) * 200 / 
+               static_cast<double>(dof_handler.n_dofs()) * n_iterations / 
                 measured_time / Utilities::MPI::n_mpi_processes(MPI_COMM_WORLD);
 
         throughput_max = std::max(throughput_max, measured_throughput);
 
-        pcout << "   200 mat-vecs in time " << measured_time
+        pcout << "   " << n_iterations << " mat-vecs in time " << measured_time
               << " and DoFs/s " << measured_throughput << std::endl;
       }
       pcout << "vmult " << dof_handler.n_dofs() << " " << throughput_max << std::endl << std::endl;
@@ -645,9 +655,13 @@ namespace Step64
 
   template <int dim, int fe_degree>
   void
-  HelmholtzProblem<dim, fe_degree>::run()
+  HelmholtzProblem<dim, fe_degree>::run(unsigned int cycle_min, 
+                                        unsigned int cycle_max, 
+                                        unsigned int n_iterations, 
+                                        unsigned int n_repetitions, 
+                                        unsigned int min_run)
   {
-    for (unsigned int cycle = 11; cycle < 12; ++cycle)
+    for (unsigned int cycle = cycle_min; cycle <= cycle_max; ++cycle)
       {
         pcout << "Cycle " << cycle << std::endl;
 
@@ -680,7 +694,7 @@ namespace Step64
               << std::endl << std::endl;
 
         assemble_rhs();
-        solve();
+        solve(n_iterations, n_repetitions, min_run);
         output_results(cycle);
         pcout << std::endl;
       }
@@ -699,6 +713,27 @@ main(int argc, char *argv[])
 
       ConditionalOStream pcout(
         std::cout, Utilities::MPI::this_mpi_process(MPI_COMM_WORLD) == 0);
+
+      unsigned int min_run       = 1; 
+      unsigned int cycle_min     = 11; 
+      unsigned int cycle_max     = 11; 
+      unsigned int n_iterations  = 200; 
+      unsigned int n_repetitions = 10;
+
+      if(argc >=1)
+        n_repetitions = atoi(argv[1]);
+
+      if(argc >=2)
+        n_repetitions = atoi(argv[2]);
+
+      if(argc >=3)
+        n_iterations = atoi(argv[3]);
+
+      if(argc >=4)
+        cycle_min = cycle_max = atoi(argv[4]);
+
+      if(argc >=5)
+        cycle_max = atoi(argv[5]);
 
       pcout << std::endl
         << "deal.II info:" << std::endl
@@ -720,7 +755,7 @@ main(int argc, char *argv[])
       AssertCuda(cuda_error_code);
 
       HelmholtzProblem<3, 4> helmholtz_problem;
-      helmholtz_problem.run();
+      helmholtz_problem.run(cycle_min, cycle_max, n_iterations, n_repetitions, min_run);
     }
   catch (std::exception &exc)
     {
