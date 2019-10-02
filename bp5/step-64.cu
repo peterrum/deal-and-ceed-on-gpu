@@ -17,6 +17,7 @@
 #include <deal.II/base/conditional_ostream.h>
 #include <deal.II/base/cuda.h>
 #include <deal.II/base/quadrature_lib.h>
+#include <deal.II/base/revision.h>
 #include <deal.II/base/timer.h>
 
 #include <deal.II/dofs/dof_tools.h>
@@ -666,11 +667,21 @@ main(int argc, char *argv[])
 
       Utilities::MPI::MPI_InitFinalize mpi_init(argc, argv, 1);
 
+      ConditionalOStream pcout(
+        std::cout, Utilities::MPI::this_mpi_process(MPI_COMM_WORLD) == 0);
+
+      pcout << std::endl
+        << "deal.II info:" << std::endl
+        << std::endl
+        << "  deal.II git version " << DEAL_II_GIT_SHORTREV << " on branch " << DEAL_II_GIT_BRANCH
+        << std::endl
+        << "  with vectorization level = " << DEAL_II_COMPILER_VECTORIZATION_LEVEL
+        << std::endl << std::endl;
+
+
       int         n_devices       = 0;
       cudaError_t cuda_error_code = cudaGetDeviceCount(&n_devices);
       AssertCuda(cuda_error_code);
-      ConditionalOStream pcout(
-        std::cout, Utilities::MPI::this_mpi_process(MPI_COMM_WORLD) == 0);
       pcout << "Number of CUDA devices: " << n_devices << std::endl;
       const unsigned int my_mpi_id =
         Utilities::MPI::this_mpi_process(MPI_COMM_WORLD);
