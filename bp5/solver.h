@@ -91,9 +91,12 @@ namespace internal
             idx_base + i * ::dealii::CUDAWrappers::block_size;
           if (idx < N)
             {
-              x[idx] += alpha * p[idx];
-              r[idx] += alpha * v[idx];
-              p[idx] = beta * p[idx] - diag[idx] * r[idx];
+              const auto r_stored = r[idx] + alpha * v[idx]; 
+              const auto p_stored = p[idx];
+              
+              x[idx] += alpha * p_stored;
+              r[idx] = r_stored;
+              p[idx] = beta * p_stored - diag[idx] * r_stored;
               v[idx] = 0.0;
             }
         }
@@ -124,15 +127,20 @@ namespace internal
 
       if (global_idx < N)
         {
-          // clang-format off
-        result_buffer0[local_idx] = p[global_idx] * v[global_idx];
-        result_buffer1[local_idx] = v[global_idx] * v[global_idx];
-        result_buffer2[local_idx] = r[global_idx] * v[global_idx];
-        result_buffer3[local_idx] = r[global_idx] * r[global_idx];
-        result_buffer4[local_idx] = r[global_idx] * diag[global_idx] * v[global_idx];
-        result_buffer5[local_idx] = v[global_idx] * diag[global_idx] * v[global_idx];
-        result_buffer6[local_idx] = r[global_idx] * diag[global_idx] * r[global_idx];
-          // clang-format on
+          const auto p_stored    = p[global_idx];
+          const auto r_stored    = r[global_idx];
+          const auto v_stored    = v[global_idx];
+          const auto diag_stored = diag[global_idx];
+          
+          result_buffer0[local_idx] = p_stored * v_stored;
+          result_buffer1[local_idx] = v_stored * v_stored;
+          result_buffer2[local_idx] = r_stored * v_stored;
+          result_buffer3[local_idx] = r_stored * r_stored;
+          
+          const auto diag_v_stored  = diag_stored * v_stored;
+          result_buffer4[local_idx] = r_stored * diag_v_stored;
+          result_buffer5[local_idx] = v_stored * diag_v_stored;
+          result_buffer6[local_idx] = r_stored * diag_stored * r_stored;
         }
       else
         {
@@ -151,13 +159,20 @@ namespace internal
             global_idx + i * ::dealii::CUDAWrappers::block_size;
           if (idx < N)
             {
-              result_buffer0[local_idx] += p[idx] * v[idx];
-              result_buffer1[local_idx] += v[idx] * v[idx];
-              result_buffer2[local_idx] += r[idx] * v[idx];
-              result_buffer3[local_idx] += r[idx] * r[idx];
-              result_buffer4[local_idx] += r[idx] * diag[idx] * v[idx];
-              result_buffer5[local_idx] += v[idx] * diag[idx] * v[idx];
-              result_buffer6[local_idx] += r[idx] * diag[idx] * r[idx];
+              const auto p_stored    = p[idx];
+              const auto r_stored    = r[idx];
+              const auto v_stored    = v[idx];
+              const auto diag_stored = diag[idx];
+              
+              result_buffer0[local_idx] += p_stored * v_stored;
+              result_buffer1[local_idx] += v_stored * v_stored;
+              result_buffer2[local_idx] += r_stored * v_stored;
+              result_buffer3[local_idx] += r_stored * r_stored;
+          
+              const auto diag_v_stored  = diag_stored * v_stored;
+              result_buffer4[local_idx] += r_stored * diag_v_stored;
+              result_buffer5[local_idx] += v_stored * diag_v_stored;
+              result_buffer6[local_idx] += r_stored * diag_stored * r_stored;
             }
         }
 
