@@ -535,7 +535,7 @@ namespace Step64
                   << measured_throughput << " norm " << solution_dev.l2_norm()
                   << std::endl;
           }
-        pcout << "pcg-standard " << dof_handler.n_dofs() << " "
+        pcout << "pcg-standard " << dof_handler.n_dofs() / Utilities::MPI::n_mpi_processes(MPI_COMM_WORLD) << " "
               << throughput_max << std::endl
               << std::endl;
       }
@@ -574,7 +574,7 @@ namespace Step64
                 << measured_throughput << " norm " << solution_dev.l2_norm()
                 << std::endl;
         }
-      pcout << "pcg-merged " << dof_handler.n_dofs() << " " << throughput_max
+      pcout << "pcg-merged " << dof_handler.n_dofs() / Utilities::MPI::n_mpi_processes(MPI_COMM_WORLD) << " " << throughput_max
             << std::endl
             << std::endl;
     }
@@ -603,7 +603,7 @@ namespace Step64
                   << measured_time << " and DoFs/s " << measured_throughput
                   << std::endl;
           }
-        pcout << "vmult " << dof_handler.n_dofs() << " " << throughput_max
+        pcout << "vmult " << dof_handler.n_dofs() / Utilities::MPI::n_mpi_processes(MPI_COMM_WORLD) << " " << throughput_max
               << std::endl
               << std::endl;
       }
@@ -622,6 +622,7 @@ namespace Step64
   HelmholtzProblem<dim, fe_degree>::output_results(
     const unsigned int cycle) const
   {
+    return;
     DataOut<dim> data_out;
 
     data_out.attach_dof_handler(dof_handler);
@@ -735,19 +736,19 @@ main(int argc, char *argv[])
       unsigned int n_iterations  = 200;
       unsigned int n_repetitions = 10;
 
-      if (argc >= 1)
-        n_repetitions = atoi(argv[1]);
+      if (argc > 1)
+        min_run = atoi(argv[1]);
 
-      if (argc >= 2)
+      if (argc > 2)
         n_repetitions = atoi(argv[2]);
 
-      if (argc >= 3)
+      if (argc > 3)
         n_iterations = atoi(argv[3]);
 
-      if (argc >= 4)
+      if (argc > 4)
         cycle_min = cycle_max = atoi(argv[4]);
 
-      if (argc >= 5)
+      if (argc > 5)
         cycle_max = atoi(argv[5]);
 
       pcout << std::endl
