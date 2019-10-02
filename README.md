@@ -72,3 +72,25 @@ Step-64:
 ```
 
 
+
+Using Nvprof + NVVP:
+------------
+
+First, generate a timeline:
+
+```
+srun nvprof -f -o profile-timeline.nvvp ./step-64
+```
+
+And then generate metrics and analysis-metrics for a kernel.
+To analyze the `apply_kernel_shmem` kernel, for example, we can run
+```
+nvprof -f -o profile-metrics-apply_kernel_shmem.metrics --kernels ::apply_kernel_shmem: --analysis-metrics --metrics all ./step-64
+```
+The `--kernels` syntax is `[context]:[nvtx range]:kernel_id:[invocation]`.
+You can leave the optional values blank to match all instances.
+
+From there, you can open the profiles in NVVP.
+You need to "import...", and then choose the `.nvvp` file for the timeline, the
+`.metrics` file for the metrics, and include the kernel syntax in the kernels
+panel.
