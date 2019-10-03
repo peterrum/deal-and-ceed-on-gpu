@@ -17,6 +17,11 @@ To resume a build of dealii, or build after a changing the source in
 ./scripts/daint-gcc/make_dealii.sh
 ```
 
+If you have the dealii source in a different directory, use the
+`--dealii-source-dir=<dealii source>` option when running `make_dealii.sh`.
+Change the build root with the `--build-root=<build root>` option for both
+`make_dealii.sh` and `make_step-64.sh`.
+
 Note: LAPACK on Piz Daint is missing a needed linker flag in its config.
 This problem will manifest in a failure to link the dealii shared library
 and programs.
