@@ -71,7 +71,7 @@ namespace internal
         }
     }
 
-    template <typename Number>
+    template <bool update_x, typename Number>
     __global__ void
     update_a(Number *        p,
              Number *        r,
@@ -94,9 +94,45 @@ namespace internal
               const auto r_stored = r[idx] + alpha * v[idx]; 
               const auto p_stored = p[idx];
               
-              x[idx] += alpha * p_stored;
+              if(update_x)
+                x[idx] += alpha * p_stored;
               r[idx] = r_stored;
               p[idx] = beta * p_stored - diag[idx] * r_stored;
+              v[idx] = 0.0;
+            }
+        }
+    }
+
+    template <typename Number>
+    __global__ void
+    update_a1(Number *       p,
+             Number *        r,
+             Number *        v,
+             Number *        x,
+             const Number *  diag,
+             const Number    alpha,
+             const Number    beta,
+             const Number    alpha_plus_alpha_old,
+             const Number    alpha_old_beta_old,
+             const size_type N)
+    {
+      const size_type idx_base =
+        threadIdx.x +
+        blockIdx.x * (blockDim.x * ::dealii::CUDAWrappers::chunk_size);
+      for (unsigned int i = 0; i < ::dealii::CUDAWrappers::chunk_size; ++i)
+        {
+          const size_type idx =
+            idx_base + i * ::dealii::CUDAWrappers::block_size;
+          if (idx < N)
+            {
+              const auto r_stored_old = r[idx]; 
+              const auto r_stored     = r_stored_old + alpha * v[idx]; 
+              const auto p_stored     = p[idx];
+              const auto diag_stored  = diag[idx];
+              
+              x[idx] += alpha_plus_alpha_old * p_stored + alpha_old_beta_old * diag_stored * r_stored_old;
+              r[idx] = r_stored;
+              p[idx] = beta * p_stored - diag_stored * r_stored;
               v[idx] = 0.0;
             }
         }
@@ -325,6 +361,10 @@ SolverCG2<VectorType>::solve(const MatrixType &        A,
 
   number alpha = 0.0;
   number beta  = 0.0;
+#ifdef OPTIMIZED_UPDATE
+  number alpha_old = 0.0;
+  number beta_old  = 0.0;
+#endif
 
   number *    results_dev;
   cudaError_t error_code = cudaMalloc(&results_dev, 7 * sizeof(number));
@@ -344,6 +384,43 @@ SolverCG2<VectorType>::solve(const MatrixType &        A,
       AssertCuda(error_code);
 
       // 1) update region
+#ifdef OPTIMIZED_UPDATE
+      if (alpha == 0.0)
+        internal::kernels::update_a0<number>
+          <<<n_blocks, ::dealii::CUDAWrappers::block_size>>>(
+            d.get_values(),
+            g.get_values(),
+            h.get_values(),
+            x.get_values(),
+            preconditioner.get_vector().get_values(),
+            alpha,
+            beta,
+            x.local_size());
+      else if (alpha_old == 0.0)
+        internal::kernels::update_a<false, number>
+          <<<n_blocks, ::dealii::CUDAWrappers::block_size>>>(
+            d.get_values(),
+            g.get_values(),
+            h.get_values(),
+            x.get_values(),
+            preconditioner.get_vector().get_values(),
+            alpha,
+            beta,
+            x.local_size());
+      else
+        internal::kernels::update_a1<number>
+          <<<n_blocks, ::dealii::CUDAWrappers::block_size>>>(
+            d.get_values(),
+            g.get_values(),
+            h.get_values(),
+            x.get_values(),
+            preconditioner.get_vector().get_values(),
+            alpha,
+            beta,
+            alpha + alpha_old / beta_old,
+            alpha_old / beta_old,
+            x.local_size());
+#else
       if (alpha == 0.0)
         internal::kernels::update_a0<number>
           <<<n_blocks, ::dealii::CUDAWrappers::block_size>>>(
@@ -356,7 +433,7 @@ SolverCG2<VectorType>::solve(const MatrixType &        A,
             beta,
             x.local_size());
       else
-        internal::kernels::update_a<number>
+        internal::kernels::update_a<true, number>
           <<<n_blocks, ::dealii::CUDAWrappers::block_size>>>(
             d.get_values(),
             g.get_values(),
@@ -366,6 +443,7 @@ SolverCG2<VectorType>::solve(const MatrixType &        A,
             alpha,
             beta,
             x.local_size());
+#endif
 
       // 2) matrix vector multiplication
       A.vmult(h, d);
@@ -397,7 +475,19 @@ SolverCG2<VectorType>::solve(const MatrixType &        A,
       conv     = this->iteration_status(it, res_norm, x);
       if (conv != dealii::SolverControl::iterate)
         {
+#ifdef OPTIMIZED_UPDATE
+          if (it % 2 == 1)
+            x.add(alpha, d);
+          else
+          {
+            const number alpha_plus_alpha_old = alpha + alpha_old / beta_old;
+            const number alpha_old_beta_old = alpha_old / beta_old;
+            for(unsigned int i = 0; i < x.local_size(); i++)
+              x[i] += alpha_plus_alpha_old * d[i] + alpha_old_beta_old * preconditioner.get_vector()[i] * g[i];
+          }
+#else
           x.add(alpha, d);
+#endif
           break;
         }
 

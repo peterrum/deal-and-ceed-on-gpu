@@ -43,10 +43,12 @@
 #include <limits>
 
 #include "fe_evaluation_gl.h"
-#include "solver.h"
 
 #define MERGED_COEFFICIENTS
 #define COLLOCATION
+#define OPTIMIZED_UPDATE
+
+#include "solver.h"
 
 namespace Step64
 {
