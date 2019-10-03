@@ -316,9 +316,9 @@ namespace Step64
     additional_data.use_ghost_coloring = true;
 
 #ifdef COLLOCATION
-      const QGaussLobatto<1> quad(fe_degree + 1);
+    const QGaussLobatto<1> quad(fe_degree + 1);
 #else
-      const QGaussLobatto<1> quad(fe_degree + 1);
+    const QGaussLobatto<1> quad(fe_degree + 1);
 #endif
     mf_data.reinit(mapping, dof_handler, constraints, quad, additional_data);
 
@@ -543,8 +543,10 @@ namespace Step64
                   << measured_throughput << " norm " << solution_dev.l2_norm()
                   << std::endl;
           }
-        pcout << "pcg-standard " << dof_handler.n_dofs() / Utilities::MPI::n_mpi_processes(MPI_COMM_WORLD) << " "
-              << throughput_max << std::endl
+        pcout << "pcg-standard "
+              << dof_handler.n_dofs() /
+                   Utilities::MPI::n_mpi_processes(MPI_COMM_WORLD)
+              << " " << throughput_max << std::endl
               << std::endl;
       }
 
@@ -582,8 +584,10 @@ namespace Step64
                 << measured_throughput << " norm " << solution_dev.l2_norm()
                 << std::endl;
         }
-      pcout << "pcg-merged " << dof_handler.n_dofs() / Utilities::MPI::n_mpi_processes(MPI_COMM_WORLD) << " " << throughput_max
-            << std::endl
+      pcout << "pcg-merged "
+            << dof_handler.n_dofs() /
+                 Utilities::MPI::n_mpi_processes(MPI_COMM_WORLD)
+            << " " << throughput_max << std::endl
             << std::endl;
     }
 
@@ -611,22 +615,24 @@ namespace Step64
                   << measured_time << " and DoFs/s " << measured_throughput
                   << std::endl;
           }
-        pcout << "vmult " << dof_handler.n_dofs() / Utilities::MPI::n_mpi_processes(MPI_COMM_WORLD) << " " << throughput_max
-              << std::endl
+        pcout << "vmult "
+              << dof_handler.n_dofs() /
+                   Utilities::MPI::n_mpi_processes(MPI_COMM_WORLD)
+              << " " << throughput_max << std::endl
               << std::endl;
       }
 
 
     if (min_run == 0)
-    {
-      LinearAlgebra::ReadWriteVector<double> rw_vector(locally_owned_dofs);
-      rw_vector.import(solution_dev, VectorOperation::insert);
-      ghost_solution_host.import(rw_vector, VectorOperation::insert);
-  
-      constraints.distribute(ghost_solution_host);
-  
-      ghost_solution_host.update_ghost_values();
-    }
+      {
+        LinearAlgebra::ReadWriteVector<double> rw_vector(locally_owned_dofs);
+        rw_vector.import(solution_dev, VectorOperation::insert);
+        ghost_solution_host.import(rw_vector, VectorOperation::insert);
+
+        constraints.distribute(ghost_solution_host);
+
+        ghost_solution_host.update_ghost_values();
+      }
   }
 
   template <int dim, int fe_degree>

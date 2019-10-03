@@ -91,10 +91,10 @@ namespace internal
             idx_base + i * ::dealii::CUDAWrappers::block_size;
           if (idx < N)
             {
-              const auto r_stored = r[idx] + alpha * v[idx]; 
+              const auto r_stored = r[idx] + alpha * v[idx];
               const auto p_stored = p[idx];
-              
-              if(update_x)
+
+              if (update_x)
                 x[idx] += alpha * p_stored;
               r[idx] = r_stored;
               p[idx] = beta * p_stored - diag[idx] * r_stored;
@@ -105,16 +105,16 @@ namespace internal
 
     template <typename Number>
     __global__ void
-    update_a1(Number *       p,
-             Number *        r,
-             Number *        v,
-             Number *        x,
-             const Number *  diag,
-             const Number    alpha,
-             const Number    beta,
-             const Number    alpha_plus_alpha_old,
-             const Number    alpha_old_beta_old,
-             const size_type N)
+    update_a1(Number *        p,
+              Number *        r,
+              Number *        v,
+              Number *        x,
+              const Number *  diag,
+              const Number    alpha,
+              const Number    beta,
+              const Number    alpha_plus_alpha_old,
+              const Number    alpha_old_beta_old,
+              const size_type N)
     {
       const size_type idx_base =
         threadIdx.x +
@@ -125,12 +125,13 @@ namespace internal
             idx_base + i * ::dealii::CUDAWrappers::block_size;
           if (idx < N)
             {
-              const auto r_stored_old = r[idx]; 
-              const auto r_stored     = r_stored_old + alpha * v[idx]; 
+              const auto r_stored_old = r[idx];
+              const auto r_stored     = r_stored_old + alpha * v[idx];
               const auto p_stored     = p[idx];
               const auto diag_stored  = diag[idx];
-              
-              x[idx] += alpha_plus_alpha_old * p_stored + alpha_old_beta_old * diag_stored * r_stored_old;
+
+              x[idx] += alpha_plus_alpha_old * p_stored +
+                        alpha_old_beta_old * diag_stored * r_stored_old;
               r[idx] = r_stored;
               p[idx] = beta * p_stored - diag_stored * r_stored;
               v[idx] = 0.0;
@@ -167,12 +168,12 @@ namespace internal
           const auto r_stored    = r[global_idx];
           const auto v_stored    = v[global_idx];
           const auto diag_stored = diag[global_idx];
-          
+
           result_buffer0[local_idx] = p_stored * v_stored;
           result_buffer1[local_idx] = v_stored * v_stored;
           result_buffer2[local_idx] = r_stored * v_stored;
           result_buffer3[local_idx] = r_stored * r_stored;
-          
+
           const auto diag_v_stored  = diag_stored * v_stored;
           result_buffer4[local_idx] = r_stored * diag_v_stored;
           result_buffer5[local_idx] = v_stored * diag_v_stored;
@@ -199,13 +200,13 @@ namespace internal
               const auto r_stored    = r[idx];
               const auto v_stored    = v[idx];
               const auto diag_stored = diag[idx];
-              
+
               result_buffer0[local_idx] += p_stored * v_stored;
               result_buffer1[local_idx] += v_stored * v_stored;
               result_buffer2[local_idx] += r_stored * v_stored;
               result_buffer3[local_idx] += r_stored * r_stored;
-          
-              const auto diag_v_stored  = diag_stored * v_stored;
+
+              const auto diag_v_stored = diag_stored * v_stored;
               result_buffer4[local_idx] += r_stored * diag_v_stored;
               result_buffer5[local_idx] += v_stored * diag_v_stored;
               result_buffer6[local_idx] += r_stored * diag_stored * r_stored;
@@ -309,8 +310,8 @@ namespace internal
         }
     }
 
-    
-    
+
+
     template <typename Number>
     __global__ void
     update_c(Number *        x,
@@ -329,7 +330,8 @@ namespace internal
           const size_type idx =
             idx_base + i * ::dealii::CUDAWrappers::block_size;
           if (idx < N)
-              x[idx] += alpha_plus_alpha_old * d[idx] + alpha_old_beta_old * diag[idx] * g[idx];
+            x[idx] += alpha_plus_alpha_old * d[idx] +
+                      alpha_old_beta_old * diag[idx] * g[idx];
         }
     }
 
@@ -490,10 +492,10 @@ SolverCG2<VectorType>::solve(const MatrixType &        A,
                  cudaMemcpyDeviceToHost);
       MPI_Allreduce(
         MPI_IN_PLACE, results, 7, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
-    
+
 #ifdef OPTIMIZED_UPDATE
       alpha_old = alpha;
-      beta_old = beta;
+      beta_old  = beta;
 #endif
 
       Assert(std::abs(results[0]) != 0., dealii::ExcDivideByZero());
@@ -508,20 +510,20 @@ SolverCG2<VectorType>::solve(const MatrixType &        A,
           if (it % 2 == 1)
             x.add(alpha, d);
           else
-          {
-            const number alpha_plus_alpha_old = alpha + alpha_old / beta_old;
-            const number alpha_old_beta_old = alpha_old / beta_old;
-            
-            internal::kernels::update_c<number>
-              <<<n_blocks, ::dealii::CUDAWrappers::block_size>>>(
-                x.get_values(),
-                d.get_values(),
-                g.get_values(),
-                preconditioner.get_vector().get_values(),
-                alpha_plus_alpha_old,
-                alpha_old_beta_old,
-                x.local_size());
-          }
+            {
+              const number alpha_plus_alpha_old = alpha + alpha_old / beta_old;
+              const number alpha_old_beta_old   = alpha_old / beta_old;
+
+              internal::kernels::update_c<number>
+                <<<n_blocks, ::dealii::CUDAWrappers::block_size>>>(
+                  x.get_values(),
+                  d.get_values(),
+                  g.get_values(),
+                  preconditioner.get_vector().get_values(),
+                  alpha_plus_alpha_old,
+                  alpha_old_beta_old,
+                  x.local_size());
+            }
 #else
           x.add(alpha, d);
 #endif
