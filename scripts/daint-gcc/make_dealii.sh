@@ -2,8 +2,11 @@
 
 set -e
 
-download_sources=--no-download-sources
-build_p4est=--no-build-p4est
+script_dir="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
+
+#
+# Process command line options
+#
 while [ $# -ne 0 ]; do
     case $1 in
         --download-sources)
@@ -20,18 +23,34 @@ while [ $# -ne 0 ]; do
             ;;
         --no-build-p4est)
             build_p4est=--no-build-p4est
+            shift
+            ;;
+        --build-root=*)
+            build_root=${1#--build-root=}
+            shift
+            ;;
+        --dealii-source-dir=*)
+            dealii_source_dir=${1#--dealii-source-dir=}
+            shift
+            ;;
+        *)
+            echo "Unknown option: $1" >&2
+            exit 1
     esac
-done;
+done
 
 
+#
+# Default values for command line options
+#
+: ${build_root:=${script_dir}/../../build}
+: ${dealii_source_dir:=${build_root}/dealii/src}
+: ${dealii_build_dir:=${build_root}/dealii/build}
+: ${p4est_dir:=${build_root}/p4est}
 
-script_dir="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
+: ${download_sources:=--no-download-sources}
+: ${build_p4est:=--no-build-p4est}
 
-build_root=${script_dir}/../../build
-
-dealii_source_dir=${build_root}/dealii/src
-dealii_build_dir=${build_root}/dealii/build
-p4est_dir=${build_root}/p4est
 
 source ${script_dir}/daint-modules.sh
 

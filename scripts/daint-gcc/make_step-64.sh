@@ -4,10 +4,20 @@ set -e
 
 script_dir="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 
-source ${script_dir}/daint-modules.sh
+#
+# Process command line options
+#
+while [ $# -ne 0 ]; do
+    case $1 in
+        --build-root=*)
+            build_root=${1#--build-root=}
+            shift
+            ;;
+    esac
+done
 
 # Set these to the appropriate source and build directories
-build_root=${script_dir}/../../build
+: ${build_root:=${script_dir}/../../build}
 
 deal_and_ceed_on_gpu_dir=${script_dir}/../../
 deal_and_ceed_on_gpu_build_dir=${build_root}/deal-and-ceed-on-gpu
@@ -15,6 +25,9 @@ deal_and_ceed_on_gpu_build_dir=${build_root}/deal-and-ceed-on-gpu
 dealii_dir=${build_root}/dealii/src
 dealii_build_dir=${build_root}/dealii/build
 p4est_fast_dir=${build_root}/p4est/FAST
+
+
+source ${script_dir}/daint-modules.sh
 
 
 mkdir -p ${deal_and_ceed_on_gpu_build_dir}
