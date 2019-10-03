@@ -4,19 +4,17 @@ set -e
 
 script_dir="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 
+source ${script_dir}/daint-modules.sh
+
 # Set these to the appropriate source and build directories
+build_root=${script_dir}/../../build
+
 deal_and_ceed_on_gpu_dir=${script_dir}/../../
-deal_and_ceed_on_gpu_build_dir=${script_dir}/../../build/deal-and-ceed-on-gpu
+deal_and_ceed_on_gpu_build_dir=${build_root}/deal-and-ceed-on-gpu
 
-dealii_dir=${SCRATCH}/prog/dealii
-dealii_build_dir=${dealii_dir}/build/dealii
-p4est_fast_dir=${dealii_dir}/build/p4est/FAST
-
-
-module swap PrgEnv-cray PrgEnv-gnu
-module load craype-accel-nvidia60
-module load cudatoolkit/9.1.85_3.18-6.0.7.0_5.1__g2eb7c52
-module swap gcc/6.2.0 gcc/5.3.0
+dealii_dir=${build_root}/dealii/src
+dealii_build_dir=${build_root}/dealii/build
+p4est_fast_dir=${build_root}/p4est/FAST
 
 
 mkdir -p ${deal_and_ceed_on_gpu_build_dir}
@@ -41,12 +39,13 @@ echo_and_run nvcc \
 	\
 	-Xcompiler "-fPIC -Wall -Wextra -Woverloaded-virtual -Wpointer-arith -Wsign-compare -Wswitch -Wsynth -Wwrite-strings -Wno-parentheses -Wno-unused-local-typedefs -Wno-literal-suffix -Wno-psabi -Wno-unused-local-typedefs" \
 	-Xcompiler "-fopenmp-simd -std=c++11 -O2 -funroll-loops -funroll-all-loops -fstrict-aliasing" \
+	-Xlinker -rpath,${dealii_build_dir}/lib:${p4est_fast_dir}/lib \
+	-Xlinker ${dealii_build_dir}/lib/libdeal_II.so.9.2.0-pre \
 	\
 	-std=c++11 \
 	-arch=sm_60 \
 	-x cu \
-	-Xlinker -rpath,${dealii_build_dir}/lib:${p4est_fast_dir}/lib \
-	-Xlinker ${dealii_build_dir}/lib/libdeal_II.so.9.2.0-pre \
+    -lineinfo \
 	\
 	${deal_and_ceed_on_gpu_dir}/bp5/step-64.cu \
 	-o step-64

@@ -2,14 +2,42 @@
 
 set -e
 
-module swap PrgEnv-cray PrgEnv-gnu
-module load craype-accel-nvidia60
-module load cudatoolkit/9.1.85_3.18-6.0.7.0_5.1__g2eb7c52
-module swap gcc/6.2.0 gcc/5.3.0
+download_sources=--no-download-sources
+build_p4est=--no-build-p4est
+while [ $# -ne 0 ]; do
+    case $1 in
+        --download-sources)
+            download_sources=--download-sources
+            shift
+            ;;
+        --no-download-sources)
+            download_sources=--no-download-sources
+            shift
+            ;;
+        --build-p4est)
+            build_p4est=--build-p4est
+            shift
+            ;;
+        --no-build-p4est)
+            build_p4est=--no-build-p4est
+    esac
+done;
+
+
+
+script_dir="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
+
+build_root=${script_dir}/../../build
+
+dealii_source_dir=${build_root}/dealii/src
+dealii_build_dir=${build_root}/dealii/build
+p4est_dir=${build_root}/p4est
+
+source ${script_dir}/daint-modules.sh
 
 # ATP library needed for LAPACK. Linker options not properly passed to
 # CMake CUDA shared linker.
-export LIBRARY_PATH=${ATP_HOME}/libApp:${LIBRARY_PATH}
+#export LIBRARY_PATH=${ATP_HOME}/libApp:${LIBRARY_PATH}
 
 
 # cc and CC now refer to gcc and g++
@@ -22,52 +50,60 @@ export FC=$(which ftn)
 
 
 # Set this to the appropriate source + build root
-mkdir -p ${SCRATCH}/prog
-pushd ${SCRATCH}/prog
 
-# The source / builds will be laid out
+# The default source / builds will be laid out
 
-# pwd
-# - dealii      (dealii source dir)
+# build_root
+# - dealii      (dealii directory)
+#   - src       (dealii source directory)
 #   - build
-#     - dealii  (dealii build dir)
-#     - p4est   (p4est source/build/install root)
+# - p4est       (p4est source/build/install root)
 
-mkdir -p dealii
-pushd dealii
-
-# After the first run, comment the git command out
-
-#git clone https://github.com/dealii/dealii.git .
-git clone https://github.com/peterrum/dealii.git . --branch dealii-on-gpu
+mkdir -p ${dealii_source_dir} ${dealii_build_dir} ${p4est_dir}
 
 
-mkdir -p build
-pushd build
+#
+# Download dealii and p4est
+#
+if [ ${download_sources} = --download-sources ]
+then
+    cd ${dealii_source_dir}
+    #git clone https://github.com/dealii/dealii.git .
+    git clone https://github.com/peterrum/dealii.git --branch dealii-on-gpu .
 
-mkdir -p p4est
-pushd p4est
-# After the first run, comment these lines out
-wget http://p4est.github.io/release/p4est-2.2.tar.gz
-../../doc/external-libs/p4est-setup.sh p4est-2.2.tar.gz $PWD
-popd
+    cd ${p4est_dir}
+    wget http://p4est.github.io/release/p4est-2.2.tar.gz
+fi
 
-mkdir -p dealii
-pushd dealii
+
+#
+# Build p4est
+#
+if [ ${build_p4est} = --build-p4est ]
+then
+    ${dealii_source_dir}/doc/external-libs/p4est-setup.sh p4est-2.2.tar.gz $PWD
+fi
+
+
+#
+# Configure & build dealii
+#
+cd ${dealii_build_dir}
 
 ~/sw/bin/cmake \
-	-DDEAL_II_WITH_CUDA=ON \
-	-DDEAL_II_WITH_CXX14=OFF \
-	-DDEAL_II_WITH_CXX17=OFF \
-	-DDEAL_II_WITH_CXX11=ON \
-	-DDEAL_II_WITH_MPI=ON \
-	-DDEAL_II_MPI_WITH_CUDA_SUPPORT=ON \
-	-DDEAL_II_WITH_P4EST=ON \
-	-DCMAKE_CXX_COMPILER="${CXX}" \
-	-DCMAKE_C_COMPILER="${CC}" \
-	-DP4EST_DIR=../p4est \
-	-DDEAL_II_CUDA_FLAGS="-arch=sm_60" \
-	-DCMAKE_VERBOSE_MAKEFILE=ON \
-	../../
+    -DDEAL_II_WITH_CUDA=ON \
+    -DDEAL_II_WITH_CXX14=OFF \
+    -DDEAL_II_WITH_CXX17=OFF \
+    -DDEAL_II_WITH_CXX11=ON \
+    -DDEAL_II_WITH_MPI=ON \
+    -DDEAL_II_MPI_WITH_CUDA_SUPPORT=ON \
+    -DDEAL_II_WITH_P4EST=ON \
+    -DCMAKE_CXX_COMPILER="${CXX}" \
+    -DCMAKE_C_COMPILER="${CC}" \
+    -DP4EST_DIR=${p4est_dir} \
+    -DDEAL_II_CUDA_FLAGS="-arch=sm_60" \
+    -DLAPACK_LINKER_FLAGS="${ATP_POST_LINK_OPTS}" \
+    -DCMAKE_VERBOSE_MAKEFILE=ON \
+    ${dealii_source_dir}
 
 make -j 20

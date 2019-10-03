@@ -5,6 +5,24 @@
 Scripts for building on Piz Daint with gcc can be found in
 [scripts/daint-gcc/](scripts/daint-gcc).
 
+To build dealii and step-64, just run
+```
+./scripts/daint-gcc/make_dealii.sh --download --build-p4est
+./scripts/daint-gcc/make_step-64.sh
+```
+
+To resume a build of dealii, or build after a changing the source in
+`build/dealii/src`, just run
+```
+./scripts/daint-gcc/make_dealii.sh
+```
+
+Note: LAPACK on Piz Daint is missing a needed linker flag in its config.
+This problem will manifest in a failure to link the dealii shared library
+and programs.
+Add the option `-DLAPACK_LINKER_FLAGS="${ATP_POST_LINK_OPTS}"` to the dealii
+cmake command to fix it.
+
 Load the correct modules:
 
 ```bash
@@ -76,6 +94,16 @@ Step-64:
 Using Nvprof + NVVP:
 ------------
 
+We compile on Daint with cudatoolkit 9.1 due to some transitive dependencies
+from pre-installed modules. However, to profile P100 GPUs with nvprof, we
+need nvprof from cudatoolkit 9.2.
+
+The following module setup should set the needed environment
+```
+module load daint-gpu
+module swap cudatoolkit/9.2.148_3.19-6.0.7.1_2.1__g3d9acc8
+```
+
 First, generate a timeline:
 
 ```
@@ -94,3 +122,11 @@ From there, you can open the profiles in NVVP.
 You need to "import...", and then choose the `.nvvp` file for the timeline, the
 `.metrics` file for the metrics, and include the kernel syntax in the kernels
 panel.
+
+To generate source-level statistics to see stalls, memory accesses, branching etc., add the -lineinfo flag to nvcc, and the --source-level-analysis flags to nvprof e.g.
+```
+nvprof -f -o profile-metrics-apply_kernel_shmem.metrics --kernels ::apply_kernel_shmem: --analysis-metrics --metrics all --source-level-analysis global_access,shared_access,branch,instruction_execution,pc_sampling ./step-64
+```
+Note the source level analysis will *significantly* slow down the execution time!
+
+Displaying source-level info in nvvp requires `nvdisasm` is installed, which should be available in the cuda toolkit.
