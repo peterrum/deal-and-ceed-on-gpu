@@ -309,6 +309,30 @@ namespace internal
         }
     }
 
+    
+    
+    template <typename Number>
+    __global__ void
+    update_c(Number *        x,
+             const Number *  d,
+             const Number *  g,
+             const Number *  diag,
+             const Number    alpha_plus_alpha_old,
+             const Number    alpha_old_beta_old,
+             const size_type N)
+    {
+      const size_type idx_base =
+        threadIdx.x +
+        blockIdx.x * (blockDim.x * ::dealii::CUDAWrappers::chunk_size);
+      for (unsigned int i = 0; i < ::dealii::CUDAWrappers::chunk_size; ++i)
+        {
+          const size_type idx =
+            idx_base + i * ::dealii::CUDAWrappers::block_size;
+          if (idx < N)
+              x[idx] += alpha_plus_alpha_old * d[idx] + alpha_old_beta_old * diag[idx] * g[idx];
+        }
+    }
+
   } // namespace kernels
 } // namespace internal
 
@@ -466,6 +490,11 @@ SolverCG2<VectorType>::solve(const MatrixType &        A,
                  cudaMemcpyDeviceToHost);
       MPI_Allreduce(
         MPI_IN_PLACE, results, 7, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+    
+#ifdef OPTIMIZED_UPDATE
+      alpha_old = alpha;
+      beta_old = beta;
+#endif
 
       Assert(std::abs(results[0]) != 0., dealii::ExcDivideByZero());
       alpha = results[6] / results[0];
@@ -482,8 +511,16 @@ SolverCG2<VectorType>::solve(const MatrixType &        A,
           {
             const number alpha_plus_alpha_old = alpha + alpha_old / beta_old;
             const number alpha_old_beta_old = alpha_old / beta_old;
-            for(unsigned int i = 0; i < x.local_size(); i++)
-              x[i] += alpha_plus_alpha_old * d[i] + alpha_old_beta_old * preconditioner.get_vector()[i] * g[i];
+            
+            internal::kernels::update_c<number>
+              <<<n_blocks, ::dealii::CUDAWrappers::block_size>>>(
+                x.get_values(),
+                d.get_values(),
+                g.get_values(),
+                preconditioner.get_vector().get_values(),
+                alpha_plus_alpha_old,
+                alpha_old_beta_old,
+                x.local_size());
           }
 #else
           x.add(alpha, d);
