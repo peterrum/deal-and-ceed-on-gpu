@@ -45,6 +45,8 @@
 #include "fe_evaluation_gl.h"
 #include "solver.h"
 
+#define MERGED_COEFFICIENTS
+#define COLLOCATION
 
 namespace Step64
 {
@@ -224,14 +226,12 @@ namespace Step64
     const double *                                              src,
     double *                                                    dst) const
   {
-    const unsigned int pos = CUDAWrappers::local_q_point_id<dim, double>(
-      cell, gpu_data, n_dofs_1d, n_q_points);
-    const unsigned int offset = n_q_points * n_cells;
-
     CUDAWrappers::FEEvaluation<dim, fe_degree, fe_degree + 1, 1, double>
       fe_eval(cell, gpu_data, shared_data);
     fe_eval.read_dof_values(src);
     fe_eval.evaluate(false, true);
+#ifdef MERGED_COEFFICIENTS
+    const unsigned int offset = n_q_points * n_cells;
     const unsigned int q =
       CUDAWrappers::internal::compute_index<dim, fe_degree + 1>();
     if (dim == 3)
@@ -259,6 +259,9 @@ namespace Step64
           grad0 * coef[q + 2 * offset] + grad1 * coef[q + 1 * offset];
       }
     __syncthreads();
+#else
+    fe_eval.submit_gradient(fe_eval.get_gradient());
+#endif
     fe_eval.integrate(false, true);
     fe_eval.distribute_local_to_global(dst);
   }
@@ -312,7 +315,11 @@ namespace Step64
     additional_data.use_ghost_coloring = true;
     additional_data.use_coloring       = false;
 
-    mf_data.reinit(mapping, dof_handler, constraints, quad, additional_data);
+#ifdef COLLOCATION
+      mf_data.reinit(mapping, dof_handler, constraints, QGaussLobatto<1>(fe_degree + 1), additional_data);
+#else
+      mf_data.reinit(mapping, dof_handler, constraints, QGauss<1>(fe_degree + 1), additional_data);
+#endif
 
     n_owned_cells = dynamic_cast<const parallel::Triangulation<dim> *>(
                       &dof_handler.get_triangulation())
@@ -608,13 +615,17 @@ namespace Step64
               << std::endl;
       }
 
-    LinearAlgebra::ReadWriteVector<double> rw_vector(locally_owned_dofs);
-    rw_vector.import(solution_dev, VectorOperation::insert);
-    ghost_solution_host.import(rw_vector, VectorOperation::insert);
 
-    constraints.distribute(ghost_solution_host);
-
-    ghost_solution_host.update_ghost_values();
+    if (min_run == 0)
+    {
+      LinearAlgebra::ReadWriteVector<double> rw_vector(locally_owned_dofs);
+      rw_vector.import(solution_dev, VectorOperation::insert);
+      ghost_solution_host.import(rw_vector, VectorOperation::insert);
+  
+      constraints.distribute(ghost_solution_host);
+  
+      ghost_solution_host.update_ghost_values();
+    }
   }
 
   template <int dim, int fe_degree>
