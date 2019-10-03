@@ -46,7 +46,7 @@
 
 #define MERGED_COEFFICIENTS
 #define COLLOCATION
-#define OPTIMIZED_UPDATE
+//#define OPTIMIZED_UPDATE
 
 #include "solver.h"
 
@@ -312,16 +312,16 @@ namespace Step64
     additional_data.mapping_update_flags = update_values | update_gradients |
                                            update_JxW_values |
                                            update_quadrature_points;
-    const QGaussLobatto<1> quad(fe_degree + 1);
 
     additional_data.use_ghost_coloring = true;
     additional_data.use_coloring       = false;
 
 #ifdef COLLOCATION
-      mf_data.reinit(mapping, dof_handler, constraints, QGaussLobatto<1>(fe_degree + 1), additional_data);
+      const QGaussLobatto<1> quad(fe_degree + 1);
 #else
-      mf_data.reinit(mapping, dof_handler, constraints, QGauss<1>(fe_degree + 1), additional_data);
+      const QGaussLobatto<1> quad(fe_degree + 1);
 #endif
+    mf_data.reinit(mapping, dof_handler, constraints, quad, additional_data);
 
     n_owned_cells = dynamic_cast<const parallel::Triangulation<dim> *>(
                       &dof_handler.get_triangulation())
