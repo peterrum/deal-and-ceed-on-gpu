@@ -13,6 +13,10 @@ while [ $# -ne 0 ]; do
             build_root=${1#--build-root=}
             shift
             ;;
+        --dealii-source-dir=*)
+            dealii_source_dir=${1#--dealii-source-dir=}
+            shift
+            ;;
     esac
 done
 
@@ -22,7 +26,7 @@ done
 deal_and_ceed_on_gpu_dir=${script_dir}/../../
 deal_and_ceed_on_gpu_build_dir=${build_root}/deal-and-ceed-on-gpu
 
-dealii_dir=${build_root}/dealii/src
+: ${dealii_source_dir:=${build_root}/dealii/src}
 dealii_build_dir=${build_root}/dealii/build
 p4est_fast_dir=${build_root}/p4est/FAST
 
@@ -42,12 +46,12 @@ echo_and_run nvcc \
 	-ccbin=$(which CC) \
 	-DBOOST_NO_AUTO_PTR \
 	-isystem=${dealii_build_dir}/include \
-	-isystem=${dealii_dir}/include \
-	-isystem=${dealii_dir}/bundled/tbb-2018_U2/include \
-	-isystem=${dealii_dir}/bundled/boost-1.70.0/include \
-	-isystem=${dealii_dir}/bundled/umfpack/UMFPACK/Include \
-	-isystem=${dealii_dir}/bundled/umfpack/AMD/Include \
-	-isystem=${dealii_dir}/bundled/muparser_v2_2_4/include \
+	-isystem=${dealii_source_dir}/include \
+	-isystem=${dealii_source_dir}/bundled/tbb-2018_U2/include \
+	-isystem=${dealii_source_dir}/bundled/boost-1.70.0/include \
+	-isystem=${dealii_source_dir}/bundled/umfpack/UMFPACK/Include \
+	-isystem=${dealii_source_dir}/bundled/umfpack/AMD/Include \
+	-isystem=${dealii_source_dir}/bundled/muparser_v2_2_4/include \
 	-isystem=${p4est_fast_dir}/include \
 	\
 	-Xcompiler "-fPIC -Wall -Wextra -Woverloaded-virtual -Wpointer-arith -Wsign-compare -Wswitch -Wsynth -Wwrite-strings -Wno-parentheses -Wno-unused-local-typedefs -Wno-literal-suffix -Wno-psabi -Wno-unused-local-typedefs" \
