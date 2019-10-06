@@ -308,6 +308,7 @@ namespace Step64
     const QGaussLobatto<1> quad(fe_degree + 1);
 
     additional_data.use_ghost_coloring = true;
+    additional_data.use_coloring       = false;
 
     mf_data.reinit(mapping, dof_handler, constraints, quad, additional_data);
 
