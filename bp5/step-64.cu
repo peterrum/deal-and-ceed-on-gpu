@@ -485,7 +485,7 @@ namespace BP5
             IterationNumberControl solver_control(n_iterations,
                                                   1e-6 *
                                                     system_rhs_dev.l2_norm());
-            SolverCG2<
+            SolverCGFullMerge<
               LinearAlgebra::distributed::Vector<double, MemorySpace::CUDA>>
               cg(solver_control);
             solution_dev = 0;
