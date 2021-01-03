@@ -1,6 +1,6 @@
 /* ---------------------------------------------------------------------
  *
- * Copyright (C) 2019 by the deal.II authors
+ * Copyright (C) 2019-2021 by the deal.II authors
  *
  * This file is part of the deal.II library.
  *
@@ -44,9 +44,9 @@
 
 #include "fe_evaluation_gl.h"
 
-#define MERGED_COEFFICIENTS
-#define COLLOCATION
-//#define OPTIMIZED_UPDATE
+#define MERGED_COEFFICIENTS // TODO
+#define COLLOCATION         // TODO
+//#define OPTIMIZED_UPDATE  // TODO
 
 #include "solver.h"
 
@@ -78,6 +78,7 @@ namespace BP5
     double *           coef;
     const unsigned int n_cells;
   };
+
 
 
   template <int dim, int fe_degree>
@@ -242,7 +243,7 @@ namespace BP5
 #ifdef COLLOCATION
     const QGaussLobatto<1> quad(fe_degree + 1);
 #else
-    const QGaussLobatto<1> quad(fe_degree + 1);
+    const QGaussLobatto<1> quad(fe_degree + 1); // TODO?
 #endif
     mf_data.reinit(mapping, dof_handler, constraints, quad, additional_data);
 
@@ -323,6 +324,7 @@ namespace BP5
 
     ConditionalOStream pcout;
   };
+
 
 
   template <int dim, int fe_degree>
@@ -558,6 +560,8 @@ namespace BP5
       }
   }
 
+
+
   template <int dim, int fe_degree>
   void
   PoissonProblem<dim, fe_degree>::output_results(const unsigned int cycle) const
@@ -606,6 +610,7 @@ namespace BP5
                                         VectorTools::L2_norm);
     pcout << "  solution norm: " << global_norm << std::endl;
   }
+
 
 
   template <int dim, int fe_degree>
