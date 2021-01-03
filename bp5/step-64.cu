@@ -50,7 +50,7 @@
 
 #include "solver.h"
 
-namespace Step64
+namespace BP5
 {
   using namespace dealii;
 
@@ -353,10 +353,10 @@ namespace Step64
 
 
   template <int dim, int fe_degree>
-  class HelmholtzProblem
+  class PoissonProblem
   {
   public:
-    HelmholtzProblem();
+    PoissonProblem();
 
     void
     run(unsigned int cycle_min,
@@ -404,7 +404,7 @@ namespace Step64
 
 
   template <int dim, int fe_degree>
-  HelmholtzProblem<dim, fe_degree>::HelmholtzProblem()
+  PoissonProblem<dim, fe_degree>::PoissonProblem()
     : mpi_communicator(MPI_COMM_WORLD)
     , triangulation(mpi_communicator)
     , fe(fe_degree)
@@ -416,7 +416,7 @@ namespace Step64
 
   template <int dim, int fe_degree>
   void
-  HelmholtzProblem<dim, fe_degree>::setup_system()
+  PoissonProblem<dim, fe_degree>::setup_system()
   {
     dof_handler.distribute_dofs(fe);
 
@@ -447,7 +447,7 @@ namespace Step64
 
   template <int dim, int fe_degree>
   void
-  HelmholtzProblem<dim, fe_degree>::assemble_rhs()
+  PoissonProblem<dim, fe_degree>::assemble_rhs()
   {
     LinearAlgebra::distributed::Vector<double, MemorySpace::Host>
                       system_rhs_host(locally_owned_dofs,
@@ -497,9 +497,9 @@ namespace Step64
 
   template <int dim, int fe_degree>
   void
-  HelmholtzProblem<dim, fe_degree>::solve(unsigned int n_iterations,
-                                          unsigned int n_repetitions,
-                                          unsigned int min_run)
+  PoissonProblem<dim, fe_degree>::solve(unsigned int n_iterations,
+                                        unsigned int n_repetitions,
+                                        unsigned int min_run)
   {
     DiagonalMatrix<
       LinearAlgebra::distributed::Vector<double, MemorySpace::CUDA>>
@@ -637,8 +637,7 @@ namespace Step64
 
   template <int dim, int fe_degree>
   void
-  HelmholtzProblem<dim, fe_degree>::output_results(
-    const unsigned int cycle) const
+  PoissonProblem<dim, fe_degree>::output_results(const unsigned int cycle) const
   {
     return;
     DataOut<dim> data_out;
@@ -688,11 +687,11 @@ namespace Step64
 
   template <int dim, int fe_degree>
   void
-  HelmholtzProblem<dim, fe_degree>::run(unsigned int cycle_min,
-                                        unsigned int cycle_max,
-                                        unsigned int n_iterations,
-                                        unsigned int n_repetitions,
-                                        unsigned int min_run)
+  PoissonProblem<dim, fe_degree>::run(unsigned int cycle_min,
+                                      unsigned int cycle_max,
+                                      unsigned int n_iterations,
+                                      unsigned int n_repetitions,
+                                      unsigned int min_run)
   {
     for (unsigned int cycle = cycle_min; cycle <= cycle_max; ++cycle)
       {
@@ -733,7 +732,7 @@ namespace Step64
         pcout << std::endl;
       }
   }
-} // namespace Step64
+} // namespace BP5
 
 
 
@@ -772,7 +771,7 @@ main(int argc, char *argv[])
 {
   try
     {
-      using namespace Step64;
+      using namespace BP5;
 
       Utilities::MPI::MPI_InitFinalize mpi_init(argc, argv, 1);
 
@@ -786,9 +785,8 @@ main(int argc, char *argv[])
       const unsigned int n_iterations  = 200;
       const unsigned int n_repetitions = 10;
 
-      HelmholtzProblem<dim, degree> helmholtz_problem;
-      helmholtz_problem.run(
-        cycle_min, cycle_max, n_iterations, n_repetitions, min_run);
+      PoissonProblem<dim, degree> poisson_problem;
+      poisson_problem.run(cycle_min, cycle_max, n_iterations, n_repetitions, min_run);
     }
   catch (std::exception &exc)
     {
