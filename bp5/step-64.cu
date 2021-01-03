@@ -314,14 +314,12 @@ namespace BP5
     IndexSet locally_owned_dofs;
     IndexSet locally_relevant_dofs;
 
-    AffineConstraints<double>                                constraints;
+    AffineConstraints<double>                        constraints;
     std::unique_ptr<PoissonOperator<dim, fe_degree>> system_matrix_dev;
 
-    LinearAlgebra::distributed::Vector<double, MemorySpace::Host>
-                                                                  ghost_solution_host;
+    LinearAlgebra::distributed::Vector<double, MemorySpace::Host> ghost_solution_host;
     LinearAlgebra::distributed::Vector<double, MemorySpace::CUDA> solution_dev;
-    LinearAlgebra::distributed::Vector<double, MemorySpace::CUDA>
-      system_rhs_dev;
+    LinearAlgebra::distributed::Vector<double, MemorySpace::CUDA> system_rhs_dev;
 
     ConditionalOStream pcout;
   };
@@ -431,7 +429,7 @@ namespace BP5
     preconditioner.get_vector().reinit(system_rhs_dev);
     preconditioner.get_vector() = 1.;
 
-    if (min_run == 0)
+    if (min_run == 0) // solve with SolverCG
       {
         double throughput_max = std::numeric_limits<double>::min();
 
@@ -474,48 +472,49 @@ namespace BP5
               << std::endl;
       }
 
-    {
-      double throughput_max = std::numeric_limits<double>::min();
+    if(true) // solve with optimized SolverCG
+      {
+        double throughput_max = std::numeric_limits<double>::min();
+  
+        for (unsigned int i = 0; i < n_repetitions; ++i)
+          {
+            system_matrix_dev->do_zero_out = false;
+            Timer                  time;
+            IterationNumberControl solver_control(n_iterations,
+                                                  1e-6 *
+                                                    system_rhs_dev.l2_norm());
+            SolverCG2<
+              LinearAlgebra::distributed::Vector<double, MemorySpace::CUDA>>
+              cg(solver_control);
+            solution_dev = 0;
+            cg.solve(*system_matrix_dev,
+                     solution_dev,
+                     system_rhs_dev,
+                     preconditioner);
+  
+            cudaDeviceSynchronize();
+  
+            const double measured_time = time.wall_time();
+            const double measured_throughput =
+              static_cast<double>(dof_handler.n_dofs()) *
+              solver_control.last_step() / measured_time /
+              Utilities::MPI::n_mpi_processes(MPI_COMM_WORLD);
+  
+            throughput_max = std::max(throughput_max, measured_throughput);
+  
+            pcout << "   Solved in " << solver_control.last_step()
+                  << " iterations with time " << measured_time << " and DoFs/s "
+                  << measured_throughput << " norm " << solution_dev.l2_norm()
+                  << std::endl;
+          }
+        pcout << "pcg-merged "
+              << dof_handler.n_dofs() /
+                   Utilities::MPI::n_mpi_processes(MPI_COMM_WORLD)
+              << " " << throughput_max << std::endl
+              << std::endl;
+      }
 
-      for (unsigned int i = 0; i < n_repetitions; ++i)
-        {
-          system_matrix_dev->do_zero_out = false;
-          Timer                  time;
-          IterationNumberControl solver_control(n_iterations,
-                                                1e-6 *
-                                                  system_rhs_dev.l2_norm());
-          SolverCG2<
-            LinearAlgebra::distributed::Vector<double, MemorySpace::CUDA>>
-            cg(solver_control);
-          solution_dev = 0;
-          cg.solve(*system_matrix_dev,
-                   solution_dev,
-                   system_rhs_dev,
-                   preconditioner);
-
-          cudaDeviceSynchronize();
-
-          const double measured_time = time.wall_time();
-          const double measured_throughput =
-            static_cast<double>(dof_handler.n_dofs()) *
-            solver_control.last_step() / measured_time /
-            Utilities::MPI::n_mpi_processes(MPI_COMM_WORLD);
-
-          throughput_max = std::max(throughput_max, measured_throughput);
-
-          pcout << "   Solved in " << solver_control.last_step()
-                << " iterations with time " << measured_time << " and DoFs/s "
-                << measured_throughput << " norm " << solution_dev.l2_norm()
-                << std::endl;
-        }
-      pcout << "pcg-merged "
-            << dof_handler.n_dofs() /
-                 Utilities::MPI::n_mpi_processes(MPI_COMM_WORLD)
-            << " " << throughput_max << std::endl
-            << std::endl;
-    }
-
-    if (min_run == 0)
+    if (min_run == 0) // vmult
       {
         double throughput_max = std::numeric_limits<double>::min();
 
@@ -547,7 +546,7 @@ namespace BP5
       }
 
 
-    if (min_run == 0)
+    if (min_run == 0) // Paraview output, computation of error, ...
       {
         LinearAlgebra::ReadWriteVector<double> rw_vector(locally_owned_dofs);
         rw_vector.import(solution_dev, VectorOperation::insert);
