@@ -736,6 +736,37 @@ namespace Step64
 } // namespace Step64
 
 
+
+void
+print_hardware_specs()
+{
+  using namespace dealii;
+
+  ConditionalOStream pcout(
+    std::cout, Utilities::MPI::this_mpi_process(MPI_COMM_WORLD) == 0);
+
+  pcout << std::endl
+        << "deal.II info:" << std::endl
+        << std::endl
+        << "  deal.II git version " << DEAL_II_GIT_SHORTREV << " on branch "
+        << DEAL_II_GIT_BRANCH << std::endl
+        << "  with vectorization level = "
+        << DEAL_II_COMPILER_VECTORIZATION_LEVEL << std::endl;
+
+  int         n_devices       = 0;
+  cudaError_t cuda_error_code = cudaGetDeviceCount(&n_devices);
+  AssertCuda(cuda_error_code);
+  pcout << "  number of CUDA devices = " << n_devices << std::endl
+        << std::endl;
+  const unsigned int my_mpi_id =
+    Utilities::MPI::this_mpi_process(MPI_COMM_WORLD);
+  const int device_id = my_mpi_id % n_devices;
+  cuda_error_code     = cudaSetDevice(device_id);
+  AssertCuda(cuda_error_code);
+}
+
+
+
 int
 main(int argc, char *argv[])
 {
@@ -745,37 +776,15 @@ main(int argc, char *argv[])
 
       Utilities::MPI::MPI_InitFinalize mpi_init(argc, argv, 1);
 
-      ConditionalOStream pcout(
-        std::cout, Utilities::MPI::this_mpi_process(MPI_COMM_WORLD) == 0);
+      print_hardware_specs();
 
-      const unsigned int dim    = 3;
-      const unsigned int degree = 4;
-
+      const unsigned int dim           = 3;
+      const unsigned int degree        = 4;
       const unsigned int min_run       = 1;
       const unsigned int cycle_min     = 3;
       const unsigned int cycle_max     = 11;
       const unsigned int n_iterations  = 200;
       const unsigned int n_repetitions = 10;
-
-      pcout << std::endl
-            << "deal.II info:" << std::endl
-            << std::endl
-            << "  deal.II git version " << DEAL_II_GIT_SHORTREV << " on branch "
-            << DEAL_II_GIT_BRANCH << std::endl
-            << "  with vectorization level = "
-            << DEAL_II_COMPILER_VECTORIZATION_LEVEL << std::endl;
-
-
-      int         n_devices       = 0;
-      cudaError_t cuda_error_code = cudaGetDeviceCount(&n_devices);
-      AssertCuda(cuda_error_code);
-      pcout << "  number of CUDA devices = " << n_devices << std::endl
-            << std::endl;
-      const unsigned int my_mpi_id =
-        Utilities::MPI::this_mpi_process(MPI_COMM_WORLD);
-      const int device_id = my_mpi_id % n_devices;
-      cuda_error_code     = cudaSetDevice(device_id);
-      AssertCuda(cuda_error_code);
 
       HelmholtzProblem<dim, degree> helmholtz_problem;
       helmholtz_problem.run(
