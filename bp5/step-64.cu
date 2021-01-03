@@ -313,7 +313,7 @@ namespace Step64
                                            update_JxW_values |
                                            update_quadrature_points;
 
-    additional_data.use_ghost_coloring = true;
+    additional_data.overlap_communication_computation = true;
 
 #ifdef COLLOCATION
     const QGaussLobatto<1> quad(fe_degree + 1);
@@ -749,7 +749,7 @@ main(int argc, char *argv[])
         std::cout, Utilities::MPI::this_mpi_process(MPI_COMM_WORLD) == 0);
 
       unsigned int min_run       = 1;
-      unsigned int cycle_min     = 11;
+      unsigned int cycle_min     = 3;
       unsigned int cycle_max     = 11;
       unsigned int n_iterations  = 200;
       unsigned int n_repetitions = 10;
