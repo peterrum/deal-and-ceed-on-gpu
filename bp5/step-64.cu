@@ -748,26 +748,14 @@ main(int argc, char *argv[])
       ConditionalOStream pcout(
         std::cout, Utilities::MPI::this_mpi_process(MPI_COMM_WORLD) == 0);
 
-      unsigned int min_run       = 1;
-      unsigned int cycle_min     = 3;
-      unsigned int cycle_max     = 11;
-      unsigned int n_iterations  = 200;
-      unsigned int n_repetitions = 10;
+      const unsigned int dim    = 3;
+      const unsigned int degree = 4;
 
-      if (argc > 1)
-        min_run = atoi(argv[1]);
-
-      if (argc > 2)
-        n_repetitions = atoi(argv[2]);
-
-      if (argc > 3)
-        n_iterations = atoi(argv[3]);
-
-      if (argc > 4)
-        cycle_min = cycle_max = atoi(argv[4]);
-
-      if (argc > 5)
-        cycle_max = atoi(argv[5]);
+      const unsigned int min_run       = 1;
+      const unsigned int cycle_min     = 3;
+      const unsigned int cycle_max     = 11;
+      const unsigned int n_iterations  = 200;
+      const unsigned int n_repetitions = 10;
 
       pcout << std::endl
             << "deal.II info:" << std::endl
@@ -789,7 +777,7 @@ main(int argc, char *argv[])
       cuda_error_code     = cudaSetDevice(device_id);
       AssertCuda(cuda_error_code);
 
-      HelmholtzProblem<3, 4> helmholtz_problem;
+      HelmholtzProblem<dim, degree> helmholtz_problem;
       helmholtz_problem.run(
         cycle_min, cycle_max, n_iterations, n_repetitions, min_run);
     }
