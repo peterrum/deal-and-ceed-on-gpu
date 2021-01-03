@@ -55,82 +55,6 @@ namespace BP5
   using namespace dealii;
 
 
-  template <int dim, int fe_degree>
-  class VaryingCoefficientFunctor
-  {
-  public:
-    VaryingCoefficientFunctor(double *coefficient)
-      : coef(coefficient)
-    {}
-
-    __device__ void
-    operator()(
-      const unsigned int                                          cell,
-      const typename CUDAWrappers::MatrixFree<dim, double>::Data *gpu_data);
-
-    static const unsigned int n_dofs_1d = fe_degree + 1;
-    static const unsigned int n_local_dofs =
-      dealii::Utilities::pow(n_dofs_1d, dim);
-    static const unsigned int n_q_points =
-      dealii::Utilities::pow(n_dofs_1d, dim);
-
-  private:
-    double *coef;
-  };
-
-
-
-  template <int dim, int fe_degree>
-  __device__ void
-  VaryingCoefficientFunctor<dim, fe_degree>::operator()(
-    const unsigned int                                          cell,
-    const typename CUDAWrappers::MatrixFree<dim, double>::Data *gpu_data)
-  {
-    const unsigned int pos = CUDAWrappers::local_q_point_id<dim, double>(
-      cell, gpu_data, n_dofs_1d, n_q_points);
-    const Point<dim> q_point =
-      CUDAWrappers::get_quadrature_point<dim, double>(cell,
-                                                      gpu_data,
-                                                      n_dofs_1d);
-
-    double p_square = 0.;
-    for (unsigned int i = 0; i < dim; ++i)
-      {
-        const double coord = q_point[i];
-        p_square += coord * coord;
-      }
-    coef[pos] = 10. / (0.05 + 2. * p_square);
-  }
-
-
-  template <int dim, int fe_degree>
-  class HelmholtzOperatorQuad
-  {
-  public:
-    __device__
-    HelmholtzOperatorQuad(double coef)
-      : coef(coef)
-    {}
-
-    __device__ void
-    operator()(CUDAWrappers::FEEvaluation<dim, fe_degree> *fe_eval,
-               const unsigned int                          q) const;
-
-  private:
-    double coef;
-  };
-
-
-  template <int dim, int fe_degree>
-  __device__ void
-  HelmholtzOperatorQuad<dim, fe_degree>::
-  operator()(CUDAWrappers::FEEvaluation<dim, fe_degree> *fe_eval,
-             const unsigned int                          q) const
-  {
-    fe_eval->submit_gradient(fe_eval->get_gradient(q), q);
-  }
-
-
 
   // Variant with merged coefficient tensor
   template <int dim, int fe_degree>
@@ -191,10 +115,10 @@ namespace BP5
 
 
   template <int dim, int fe_degree>
-  class LocalHelmholtzOperatorMerged
+  class LocalPoissonOperator
   {
   public:
-    LocalHelmholtzOperatorMerged(double *           coefficient,
+    LocalPoissonOperator(double *           coefficient,
                                  const unsigned int n_cells)
       : coef(coefficient)
       , n_cells(n_cells)
@@ -221,7 +145,7 @@ namespace BP5
 
   template <int dim, int fe_degree>
   __device__ void
-  LocalHelmholtzOperatorMerged<dim, fe_degree>::operator()(
+  LocalPoissonOperator<dim, fe_degree>::operator()(
     const unsigned int                                          cell,
     const typename CUDAWrappers::MatrixFree<dim, double>::Data *gpu_data,
     CUDAWrappers::SharedData<dim, double> *                     shared_data,
@@ -271,11 +195,11 @@ namespace BP5
 
 
   template <int dim, int fe_degree>
-  class HelmholtzOperatorMerged
+  class PoissonOperator
   {
   public:
-    HelmholtzOperatorMerged(const DoFHandler<dim> &          dof_handler,
-                            const AffineConstraints<double> &constraints);
+    PoissonOperator(const DoFHandler<dim> &          dof_handler,
+                    const AffineConstraints<double> &constraints);
 
     void
     vmult(LinearAlgebra::distributed::Vector<double, MemorySpace::CUDA> &dst,
@@ -301,7 +225,7 @@ namespace BP5
 
 
   template <int dim, int fe_degree>
-  HelmholtzOperatorMerged<dim, fe_degree>::HelmholtzOperatorMerged(
+  PoissonOperator<dim, fe_degree>::PoissonOperator(
     const DoFHandler<dim> &          dof_handler,
     const AffineConstraints<double> &constraints)
     : do_zero_out(true)
@@ -337,16 +261,16 @@ namespace BP5
 
   template <int dim, int fe_degree>
   void
-  HelmholtzOperatorMerged<dim, fe_degree>::vmult(
+  PoissonOperator<dim, fe_degree>::vmult(
     LinearAlgebra::distributed::Vector<double, MemorySpace::CUDA> &      dst,
     const LinearAlgebra::distributed::Vector<double, MemorySpace::CUDA> &src)
     const
   {
     if (do_zero_out)
       dst = 0.;
-    LocalHelmholtzOperatorMerged<dim, fe_degree> helmholtz_operator(
+    LocalPoissonOperator<dim, fe_degree> local_poisson_operator(
       coef.get_values(), n_owned_cells);
-    mf_data.cell_loop(helmholtz_operator, src, dst);
+    mf_data.cell_loop(local_poisson_operator, src, dst);
     mf_data.copy_constrained_values(src, dst);
   }
 
@@ -391,7 +315,7 @@ namespace BP5
     IndexSet locally_relevant_dofs;
 
     AffineConstraints<double>                                constraints;
-    std::unique_ptr<HelmholtzOperatorMerged<dim, fe_degree>> system_matrix_dev;
+    std::unique_ptr<PoissonOperator<dim, fe_degree>> system_matrix_dev;
 
     LinearAlgebra::distributed::Vector<double, MemorySpace::Host>
                                                                   ghost_solution_host;
@@ -434,7 +358,7 @@ namespace BP5
     constraints.close();
 
     system_matrix_dev.reset(
-      new HelmholtzOperatorMerged<dim, fe_degree>(dof_handler, constraints));
+      new PoissonOperator<dim, fe_degree>(dof_handler, constraints));
 
     ghost_solution_host.reinit(locally_owned_dofs,
                                locally_relevant_dofs,
