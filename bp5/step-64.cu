@@ -44,9 +44,9 @@
 
 #include "fe_evaluation_gl.h"
 
-#define MERGED_COEFFICIENTS // TODO
-#define COLLOCATION         // TODO
-//#define OPTIMIZED_UPDATE  // TODO
+#define MERGED_COEFFICIENTS
+//#define COLLOCATION 
+#define OPTIMIZED_UPDATE
 
 #include "solver.h"
 
@@ -243,7 +243,7 @@ namespace BP5
 #ifdef COLLOCATION
     const QGaussLobatto<1> quad(fe_degree + 1);
 #else
-    const QGaussLobatto<1> quad(fe_degree + 1); // TODO?
+    const QGauss<1> quad(fe_degree + 1);
 #endif
     mf_data.reinit(mapping, dof_handler, constraints, quad, additional_data);
 
