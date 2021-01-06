@@ -566,49 +566,54 @@ namespace BP5
   void
   PoissonProblem<dim, fe_degree>::output_results(const unsigned int cycle) const
   {
-    return;
-    DataOut<dim> data_out;
-
-    data_out.attach_dof_handler(dof_handler);
-    data_out.add_data_vector(ghost_solution_host, "solution");
-    data_out.build_patches();
-
-    std::ofstream output(
-      "solution-" + std::to_string(cycle) + "." +
-      std::to_string(Utilities::MPI::this_mpi_process(mpi_communicator)) +
-      ".vtu");
-    DataOutBase::VtkFlags flags;
-    flags.compression_level = DataOutBase::VtkFlags::best_speed;
-    data_out.set_flags(flags);
-    data_out.write_vtu(output);
-
-    if (Utilities::MPI::this_mpi_process(mpi_communicator) == 0)
+    if(false)
       {
-        std::vector<std::string> filenames;
-        for (unsigned int i = 0;
-             i < Utilities::MPI::n_mpi_processes(mpi_communicator);
-             ++i)
-          filenames.emplace_back("solution-" + std::to_string(cycle) + "." +
-                                 std::to_string(i) + ".vtu");
+        DataOut<dim> data_out;
 
-        std::string master_name =
-          "solution-" + Utilities::to_string(cycle) + ".pvtu";
-        std::ofstream master_output(master_name);
-        data_out.write_pvtu_record(master_output, filenames);
+        data_out.attach_dof_handler(dof_handler);
+        data_out.add_data_vector(ghost_solution_host, "solution");
+        data_out.build_patches();
+
+        std::ofstream output(
+          "solution-" + std::to_string(cycle) + "." +
+          std::to_string(Utilities::MPI::this_mpi_process(mpi_communicator)) +
+          ".vtu");
+        DataOutBase::VtkFlags flags;
+        flags.compression_level = DataOutBase::VtkFlags::best_speed;
+        data_out.set_flags(flags);
+        data_out.write_vtu(output);
+
+        if (Utilities::MPI::this_mpi_process(mpi_communicator) == 0)
+          {
+            std::vector<std::string> filenames;
+            for (unsigned int i = 0;
+                 i < Utilities::MPI::n_mpi_processes(mpi_communicator);
+                 ++i)
+              filenames.emplace_back("solution-" + std::to_string(cycle) + "." +
+                                     std::to_string(i) + ".vtu");
+
+            std::string master_name =
+              "solution-" + Utilities::to_string(cycle) + ".pvtu";
+            std::ofstream master_output(master_name);
+            data_out.write_pvtu_record(master_output, filenames);
+          }
       }
 
-    Vector<float> cellwise_norm(triangulation.n_active_cells());
-    VectorTools::integrate_difference(dof_handler,
-                                      ghost_solution_host,
-                                      Functions::ZeroFunction<dim>(),
-                                      cellwise_norm,
-                                      QGauss<dim>(fe.degree + 2),
-                                      VectorTools::L2_norm);
-    const double global_norm =
-      VectorTools::compute_global_error(triangulation,
-                                        cellwise_norm,
-                                        VectorTools::L2_norm);
-    pcout << "  solution norm: " << global_norm << std::endl;
+    if(true)
+      {
+        Vector<float> cellwise_norm(triangulation.n_active_cells());
+        VectorTools::integrate_difference(dof_handler,
+                                          ghost_solution_host,
+                                          Functions::ZeroFunction<dim>(),
+                                          cellwise_norm,
+                                          QGauss<dim>(fe.degree + 2),
+                                          VectorTools::L2_norm);
+        const double global_norm =
+          VectorTools::compute_global_error(triangulation,
+                                            cellwise_norm,
+                                            VectorTools::L2_norm);
+        pcout << "  solution norm: " << global_norm << std::endl;
+      }
   }
 
 
@@ -625,25 +630,36 @@ namespace BP5
       {
         pcout << "Cycle " << cycle << std::endl;
 
-        const unsigned int        n_refine  = (cycle + 6) / dim;
-        const unsigned int        remainder = cycle % dim;
-        std::vector<unsigned int> subdivisions(dim, 1);
-        for (unsigned int d = 0; d < remainder; ++d)
-          subdivisions[d] = 2;
-        Point<dim> p1;
-        for (unsigned int d = 0; d < dim; ++d)
-          p1[d] = -1;
+        unsigned int       n_refine  = cycle / 6;
+        const unsigned int remainder = cycle % 6;
+
+        std::vector<unsigned int>                 subdivisions(dim, 1);
+        if (remainder == 1 && cycle > 1)
+          {
+            subdivisions[0] = 3;
+            subdivisions[1] = 2;
+            subdivisions[2] = 2;
+            n_refine -= 1;
+          }
+        if (remainder == 2)
+          subdivisions[0] = 2;
+        else if (remainder == 3)
+          subdivisions[0] = 3;
+        else if (remainder == 4)
+          subdivisions[0] = subdivisions[1] = 2;
+        else if (remainder == 5)
+          {
+            subdivisions[0] = 3;
+            subdivisions[1] = 2;
+          }
+
         Point<dim> p2;
-        for (unsigned int d = 0; d < remainder; ++d)
-          p2[d] = 3;
-        for (unsigned int d = remainder; d < dim; ++d)
-          p2[d] = 1;
+        for (unsigned int d = 0; d < dim; ++d)
+          p2[d] = subdivisions[d];
 
         triangulation.clear();
-        GridGenerator::subdivided_hyper_rectangle(triangulation,
-                                                  subdivisions,
-                                                  p1,
-                                                  p2);
+        GridGenerator::subdivided_hyper_rectangle(triangulation, subdivisions, Point<dim>(), p2);
+
         triangulation.refine_global(n_refine);
 
         setup_system();
@@ -707,9 +723,9 @@ main(int argc, char *argv[])
 
       const unsigned int dim           = 3;
       const unsigned int degree        = 4;
-      const unsigned int min_run       = 1;
-      const unsigned int cycle_min     = 3;
-      const unsigned int cycle_max     = 11;
+      const unsigned int min_run       = 0;
+      const unsigned int cycle_min     = 7;
+      const unsigned int cycle_max     = 40;
       const unsigned int n_iterations  = 200;
       const unsigned int n_repetitions = 10;
 
