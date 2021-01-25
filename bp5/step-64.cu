@@ -722,7 +722,7 @@ main(int argc, char *argv[])
       print_hardware_specs();
 
       const unsigned int dim           = 3;
-      const unsigned int degree        = 4;
+      const unsigned int degree        = 5;
       const unsigned int min_run       = 0;
       const unsigned int cycle_min     = 7;
       const unsigned int cycle_max     = 40;
