@@ -1,6 +1,6 @@
 /* ---------------------------------------------------------------------
  *
- * Copyright (C) 2019 by the deal.II authors
+ * Copyright (C) 2019-2021 by the deal.II authors
  *
  * This file is part of the deal.II library.
  *
@@ -45,90 +45,14 @@
 #include "fe_evaluation_gl.h"
 
 #define MERGED_COEFFICIENTS
-#define COLLOCATION
-//#define OPTIMIZED_UPDATE
+//#define COLLOCATION 
+#define OPTIMIZED_UPDATE
 
 #include "solver.h"
 
-namespace Step64
+namespace BP5
 {
   using namespace dealii;
-
-
-  template <int dim, int fe_degree>
-  class VaryingCoefficientFunctor
-  {
-  public:
-    VaryingCoefficientFunctor(double *coefficient)
-      : coef(coefficient)
-    {}
-
-    __device__ void
-    operator()(
-      const unsigned int                                          cell,
-      const typename CUDAWrappers::MatrixFree<dim, double>::Data *gpu_data);
-
-    static const unsigned int n_dofs_1d = fe_degree + 1;
-    static const unsigned int n_local_dofs =
-      dealii::Utilities::pow(n_dofs_1d, dim);
-    static const unsigned int n_q_points =
-      dealii::Utilities::pow(n_dofs_1d, dim);
-
-  private:
-    double *coef;
-  };
-
-
-
-  template <int dim, int fe_degree>
-  __device__ void
-  VaryingCoefficientFunctor<dim, fe_degree>::operator()(
-    const unsigned int                                          cell,
-    const typename CUDAWrappers::MatrixFree<dim, double>::Data *gpu_data)
-  {
-    const unsigned int pos = CUDAWrappers::local_q_point_id<dim, double>(
-      cell, gpu_data, n_dofs_1d, n_q_points);
-    const Point<dim> q_point =
-      CUDAWrappers::get_quadrature_point<dim, double>(cell,
-                                                      gpu_data,
-                                                      n_dofs_1d);
-
-    double p_square = 0.;
-    for (unsigned int i = 0; i < dim; ++i)
-      {
-        const double coord = q_point[i];
-        p_square += coord * coord;
-      }
-    coef[pos] = 10. / (0.05 + 2. * p_square);
-  }
-
-
-  template <int dim, int fe_degree>
-  class HelmholtzOperatorQuad
-  {
-  public:
-    __device__
-    HelmholtzOperatorQuad(double coef)
-      : coef(coef)
-    {}
-
-    __device__ void
-    operator()(CUDAWrappers::FEEvaluation<dim, fe_degree> *fe_eval,
-               const unsigned int                          q) const;
-
-  private:
-    double coef;
-  };
-
-
-  template <int dim, int fe_degree>
-  __device__ void
-  HelmholtzOperatorQuad<dim, fe_degree>::
-  operator()(CUDAWrappers::FEEvaluation<dim, fe_degree> *fe_eval,
-             const unsigned int                          q) const
-  {
-    fe_eval->submit_gradient(fe_eval->get_gradient(q), q);
-  }
 
 
 
@@ -154,6 +78,7 @@ namespace Step64
     double *           coef;
     const unsigned int n_cells;
   };
+
 
 
   template <int dim, int fe_degree>
@@ -191,10 +116,10 @@ namespace Step64
 
 
   template <int dim, int fe_degree>
-  class LocalHelmholtzOperatorMerged
+  class LocalPoissonOperator
   {
   public:
-    LocalHelmholtzOperatorMerged(double *           coefficient,
+    LocalPoissonOperator(double *           coefficient,
                                  const unsigned int n_cells)
       : coef(coefficient)
       , n_cells(n_cells)
@@ -221,7 +146,7 @@ namespace Step64
 
   template <int dim, int fe_degree>
   __device__ void
-  LocalHelmholtzOperatorMerged<dim, fe_degree>::operator()(
+  LocalPoissonOperator<dim, fe_degree>::operator()(
     const unsigned int                                          cell,
     const typename CUDAWrappers::MatrixFree<dim, double>::Data *gpu_data,
     CUDAWrappers::SharedData<dim, double> *                     shared_data,
@@ -271,11 +196,11 @@ namespace Step64
 
 
   template <int dim, int fe_degree>
-  class HelmholtzOperatorMerged
+  class PoissonOperator
   {
   public:
-    HelmholtzOperatorMerged(const DoFHandler<dim> &          dof_handler,
-                            const AffineConstraints<double> &constraints);
+    PoissonOperator(const DoFHandler<dim> &          dof_handler,
+                    const AffineConstraints<double> &constraints);
 
     void
     vmult(LinearAlgebra::distributed::Vector<double, MemorySpace::CUDA> &dst,
@@ -301,7 +226,7 @@ namespace Step64
 
 
   template <int dim, int fe_degree>
-  HelmholtzOperatorMerged<dim, fe_degree>::HelmholtzOperatorMerged(
+  PoissonOperator<dim, fe_degree>::PoissonOperator(
     const DoFHandler<dim> &          dof_handler,
     const AffineConstraints<double> &constraints)
     : do_zero_out(true)
@@ -313,12 +238,12 @@ namespace Step64
                                            update_JxW_values |
                                            update_quadrature_points;
 
-    additional_data.use_ghost_coloring = true;
+    additional_data.overlap_communication_computation = true;
 
 #ifdef COLLOCATION
     const QGaussLobatto<1> quad(fe_degree + 1);
 #else
-    const QGaussLobatto<1> quad(fe_degree + 1);
+    const QGauss<1> quad(fe_degree + 1);
 #endif
     mf_data.reinit(mapping, dof_handler, constraints, quad, additional_data);
 
@@ -337,26 +262,26 @@ namespace Step64
 
   template <int dim, int fe_degree>
   void
-  HelmholtzOperatorMerged<dim, fe_degree>::vmult(
+  PoissonOperator<dim, fe_degree>::vmult(
     LinearAlgebra::distributed::Vector<double, MemorySpace::CUDA> &      dst,
     const LinearAlgebra::distributed::Vector<double, MemorySpace::CUDA> &src)
     const
   {
     if (do_zero_out)
       dst = 0.;
-    LocalHelmholtzOperatorMerged<dim, fe_degree> helmholtz_operator(
+    LocalPoissonOperator<dim, fe_degree> local_poisson_operator(
       coef.get_values(), n_owned_cells);
-    mf_data.cell_loop(helmholtz_operator, src, dst);
+    mf_data.cell_loop(local_poisson_operator, src, dst);
     mf_data.copy_constrained_values(src, dst);
   }
 
 
 
   template <int dim, int fe_degree>
-  class HelmholtzProblem
+  class PoissonProblem
   {
   public:
-    HelmholtzProblem();
+    PoissonProblem();
 
     void
     run(unsigned int cycle_min,
@@ -390,21 +315,20 @@ namespace Step64
     IndexSet locally_owned_dofs;
     IndexSet locally_relevant_dofs;
 
-    AffineConstraints<double>                                constraints;
-    std::unique_ptr<HelmholtzOperatorMerged<dim, fe_degree>> system_matrix_dev;
+    AffineConstraints<double>                        constraints;
+    std::unique_ptr<PoissonOperator<dim, fe_degree>> system_matrix_dev;
 
-    LinearAlgebra::distributed::Vector<double, MemorySpace::Host>
-                                                                  ghost_solution_host;
+    LinearAlgebra::distributed::Vector<double, MemorySpace::Host> ghost_solution_host;
     LinearAlgebra::distributed::Vector<double, MemorySpace::CUDA> solution_dev;
-    LinearAlgebra::distributed::Vector<double, MemorySpace::CUDA>
-      system_rhs_dev;
+    LinearAlgebra::distributed::Vector<double, MemorySpace::CUDA> system_rhs_dev;
 
     ConditionalOStream pcout;
   };
 
 
+
   template <int dim, int fe_degree>
-  HelmholtzProblem<dim, fe_degree>::HelmholtzProblem()
+  PoissonProblem<dim, fe_degree>::PoissonProblem()
     : mpi_communicator(MPI_COMM_WORLD)
     , triangulation(mpi_communicator)
     , fe(fe_degree)
@@ -416,7 +340,7 @@ namespace Step64
 
   template <int dim, int fe_degree>
   void
-  HelmholtzProblem<dim, fe_degree>::setup_system()
+  PoissonProblem<dim, fe_degree>::setup_system()
   {
     dof_handler.distribute_dofs(fe);
 
@@ -434,7 +358,7 @@ namespace Step64
     constraints.close();
 
     system_matrix_dev.reset(
-      new HelmholtzOperatorMerged<dim, fe_degree>(dof_handler, constraints));
+      new PoissonOperator<dim, fe_degree>(dof_handler, constraints));
 
     ghost_solution_host.reinit(locally_owned_dofs,
                                locally_relevant_dofs,
@@ -447,7 +371,7 @@ namespace Step64
 
   template <int dim, int fe_degree>
   void
-  HelmholtzProblem<dim, fe_degree>::assemble_rhs()
+  PoissonProblem<dim, fe_degree>::assemble_rhs()
   {
     LinearAlgebra::distributed::Vector<double, MemorySpace::Host>
                       system_rhs_host(locally_owned_dofs,
@@ -497,9 +421,9 @@ namespace Step64
 
   template <int dim, int fe_degree>
   void
-  HelmholtzProblem<dim, fe_degree>::solve(unsigned int n_iterations,
-                                          unsigned int n_repetitions,
-                                          unsigned int min_run)
+  PoissonProblem<dim, fe_degree>::solve(unsigned int n_iterations,
+                                        unsigned int n_repetitions,
+                                        unsigned int min_run)
   {
     DiagonalMatrix<
       LinearAlgebra::distributed::Vector<double, MemorySpace::CUDA>>
@@ -507,7 +431,7 @@ namespace Step64
     preconditioner.get_vector().reinit(system_rhs_dev);
     preconditioner.get_vector() = 1.;
 
-    if (min_run == 0)
+    if (min_run == 0) // solve with SolverCG
       {
         double throughput_max = std::numeric_limits<double>::min();
 
@@ -550,48 +474,49 @@ namespace Step64
               << std::endl;
       }
 
-    {
-      double throughput_max = std::numeric_limits<double>::min();
+    if(true) // solve with optimized SolverCG
+      {
+        double throughput_max = std::numeric_limits<double>::min();
+  
+        for (unsigned int i = 0; i < n_repetitions; ++i)
+          {
+            system_matrix_dev->do_zero_out = false;
+            Timer                  time;
+            IterationNumberControl solver_control(n_iterations,
+                                                  1e-6 *
+                                                    system_rhs_dev.l2_norm());
+            SolverCGFullMerge<
+              LinearAlgebra::distributed::Vector<double, MemorySpace::CUDA>>
+              cg(solver_control);
+            solution_dev = 0;
+            cg.solve(*system_matrix_dev,
+                     solution_dev,
+                     system_rhs_dev,
+                     preconditioner);
+  
+            cudaDeviceSynchronize();
+  
+            const double measured_time = time.wall_time();
+            const double measured_throughput =
+              static_cast<double>(dof_handler.n_dofs()) *
+              solver_control.last_step() / measured_time /
+              Utilities::MPI::n_mpi_processes(MPI_COMM_WORLD);
+  
+            throughput_max = std::max(throughput_max, measured_throughput);
+  
+            pcout << "   Solved in " << solver_control.last_step()
+                  << " iterations with time " << measured_time << " and DoFs/s "
+                  << measured_throughput << " norm " << solution_dev.l2_norm()
+                  << std::endl;
+          }
+        pcout << "pcg-merged "
+              << dof_handler.n_dofs() /
+                   Utilities::MPI::n_mpi_processes(MPI_COMM_WORLD)
+              << " " << throughput_max << std::endl
+              << std::endl;
+      }
 
-      for (unsigned int i = 0; i < n_repetitions; ++i)
-        {
-          system_matrix_dev->do_zero_out = false;
-          Timer                  time;
-          IterationNumberControl solver_control(n_iterations,
-                                                1e-6 *
-                                                  system_rhs_dev.l2_norm());
-          SolverCG2<
-            LinearAlgebra::distributed::Vector<double, MemorySpace::CUDA>>
-            cg(solver_control);
-          solution_dev = 0;
-          cg.solve(*system_matrix_dev,
-                   solution_dev,
-                   system_rhs_dev,
-                   preconditioner);
-
-          cudaDeviceSynchronize();
-
-          const double measured_time = time.wall_time();
-          const double measured_throughput =
-            static_cast<double>(dof_handler.n_dofs()) *
-            solver_control.last_step() / measured_time /
-            Utilities::MPI::n_mpi_processes(MPI_COMM_WORLD);
-
-          throughput_max = std::max(throughput_max, measured_throughput);
-
-          pcout << "   Solved in " << solver_control.last_step()
-                << " iterations with time " << measured_time << " and DoFs/s "
-                << measured_throughput << " norm " << solution_dev.l2_norm()
-                << std::endl;
-        }
-      pcout << "pcg-merged "
-            << dof_handler.n_dofs() /
-                 Utilities::MPI::n_mpi_processes(MPI_COMM_WORLD)
-            << " " << throughput_max << std::endl
-            << std::endl;
-    }
-
-    if (min_run == 0)
+    if (min_run == 0) // vmult
       {
         double throughput_max = std::numeric_limits<double>::min();
 
@@ -623,7 +548,7 @@ namespace Step64
       }
 
 
-    if (min_run == 0)
+    if (min_run == 0) // Paraview output, computation of error, ...
       {
         LinearAlgebra::ReadWriteVector<double> rw_vector(locally_owned_dofs);
         rw_vector.import(solution_dev, VectorOperation::insert);
@@ -635,88 +560,106 @@ namespace Step64
       }
   }
 
+
+
   template <int dim, int fe_degree>
   void
-  HelmholtzProblem<dim, fe_degree>::output_results(
-    const unsigned int cycle) const
+  PoissonProblem<dim, fe_degree>::output_results(const unsigned int cycle) const
   {
-    return;
-    DataOut<dim> data_out;
-
-    data_out.attach_dof_handler(dof_handler);
-    data_out.add_data_vector(ghost_solution_host, "solution");
-    data_out.build_patches();
-
-    std::ofstream output(
-      "solution-" + std::to_string(cycle) + "." +
-      std::to_string(Utilities::MPI::this_mpi_process(mpi_communicator)) +
-      ".vtu");
-    DataOutBase::VtkFlags flags;
-    flags.compression_level = DataOutBase::VtkFlags::best_speed;
-    data_out.set_flags(flags);
-    data_out.write_vtu(output);
-
-    if (Utilities::MPI::this_mpi_process(mpi_communicator) == 0)
+    if(false)
       {
-        std::vector<std::string> filenames;
-        for (unsigned int i = 0;
-             i < Utilities::MPI::n_mpi_processes(mpi_communicator);
-             ++i)
-          filenames.emplace_back("solution-" + std::to_string(cycle) + "." +
-                                 std::to_string(i) + ".vtu");
+        DataOut<dim> data_out;
 
-        std::string master_name =
-          "solution-" + Utilities::to_string(cycle) + ".pvtu";
-        std::ofstream master_output(master_name);
-        data_out.write_pvtu_record(master_output, filenames);
+        data_out.attach_dof_handler(dof_handler);
+        data_out.add_data_vector(ghost_solution_host, "solution");
+        data_out.build_patches();
+
+        std::ofstream output(
+          "solution-" + std::to_string(cycle) + "." +
+          std::to_string(Utilities::MPI::this_mpi_process(mpi_communicator)) +
+          ".vtu");
+        DataOutBase::VtkFlags flags;
+        flags.compression_level = DataOutBase::VtkFlags::best_speed;
+        data_out.set_flags(flags);
+        data_out.write_vtu(output);
+
+        if (Utilities::MPI::this_mpi_process(mpi_communicator) == 0)
+          {
+            std::vector<std::string> filenames;
+            for (unsigned int i = 0;
+                 i < Utilities::MPI::n_mpi_processes(mpi_communicator);
+                 ++i)
+              filenames.emplace_back("solution-" + std::to_string(cycle) + "." +
+                                     std::to_string(i) + ".vtu");
+
+            std::string master_name =
+              "solution-" + Utilities::to_string(cycle) + ".pvtu";
+            std::ofstream master_output(master_name);
+            data_out.write_pvtu_record(master_output, filenames);
+          }
       }
 
-    Vector<float> cellwise_norm(triangulation.n_active_cells());
-    VectorTools::integrate_difference(dof_handler,
-                                      ghost_solution_host,
-                                      Functions::ZeroFunction<dim>(),
-                                      cellwise_norm,
-                                      QGauss<dim>(fe.degree + 2),
-                                      VectorTools::L2_norm);
-    const double global_norm =
-      VectorTools::compute_global_error(triangulation,
-                                        cellwise_norm,
-                                        VectorTools::L2_norm);
-    pcout << "  solution norm: " << global_norm << std::endl;
+    if(true)
+      {
+        Vector<float> cellwise_norm(triangulation.n_active_cells());
+        VectorTools::integrate_difference(dof_handler,
+                                          ghost_solution_host,
+                                          Functions::ZeroFunction<dim>(),
+                                          cellwise_norm,
+                                          QGauss<dim>(fe.degree + 2),
+                                          VectorTools::L2_norm);
+        const double global_norm =
+          VectorTools::compute_global_error(triangulation,
+                                            cellwise_norm,
+                                            VectorTools::L2_norm);
+        pcout << "  solution norm: " << global_norm << std::endl;
+      }
   }
 
 
+
   template <int dim, int fe_degree>
   void
-  HelmholtzProblem<dim, fe_degree>::run(unsigned int cycle_min,
-                                        unsigned int cycle_max,
-                                        unsigned int n_iterations,
-                                        unsigned int n_repetitions,
-                                        unsigned int min_run)
+  PoissonProblem<dim, fe_degree>::run(unsigned int cycle_min,
+                                      unsigned int cycle_max,
+                                      unsigned int n_iterations,
+                                      unsigned int n_repetitions,
+                                      unsigned int min_run)
   {
     for (unsigned int cycle = cycle_min; cycle <= cycle_max; ++cycle)
       {
         pcout << "Cycle " << cycle << std::endl;
 
-        const unsigned int        n_refine  = (cycle + 6) / dim;
-        const unsigned int        remainder = cycle % dim;
-        std::vector<unsigned int> subdivisions(dim, 1);
-        for (unsigned int d = 0; d < remainder; ++d)
-          subdivisions[d] = 2;
-        Point<dim> p1;
-        for (unsigned int d = 0; d < dim; ++d)
-          p1[d] = -1;
+        unsigned int       n_refine  = cycle / 6;
+        const unsigned int remainder = cycle % 6;
+
+        std::vector<unsigned int>                 subdivisions(dim, 1);
+        if (remainder == 1 && cycle > 1)
+          {
+            subdivisions[0] = 3;
+            subdivisions[1] = 2;
+            subdivisions[2] = 2;
+            n_refine -= 1;
+          }
+        if (remainder == 2)
+          subdivisions[0] = 2;
+        else if (remainder == 3)
+          subdivisions[0] = 3;
+        else if (remainder == 4)
+          subdivisions[0] = subdivisions[1] = 2;
+        else if (remainder == 5)
+          {
+            subdivisions[0] = 3;
+            subdivisions[1] = 2;
+          }
+
         Point<dim> p2;
-        for (unsigned int d = 0; d < remainder; ++d)
-          p2[d] = 3;
-        for (unsigned int d = remainder; d < dim; ++d)
-          p2[d] = 1;
+        for (unsigned int d = 0; d < dim; ++d)
+          p2[d] = subdivisions[d];
 
         triangulation.clear();
-        GridGenerator::subdivided_hyper_rectangle(triangulation,
-                                                  subdivisions,
-                                                  p1,
-                                                  p2);
+        GridGenerator::subdivided_hyper_rectangle(triangulation, subdivisions, Point<dim>(), p2);
+
         triangulation.refine_global(n_refine);
 
         setup_system();
@@ -733,7 +676,38 @@ namespace Step64
         pcout << std::endl;
       }
   }
-} // namespace Step64
+} // namespace BP5
+
+
+
+void
+print_hardware_specs()
+{
+  using namespace dealii;
+
+  ConditionalOStream pcout(
+    std::cout, Utilities::MPI::this_mpi_process(MPI_COMM_WORLD) == 0);
+
+  pcout << std::endl
+        << "deal.II info:" << std::endl
+        << std::endl
+        << "  deal.II git version " << DEAL_II_GIT_SHORTREV << " on branch "
+        << DEAL_II_GIT_BRANCH << std::endl
+        << "  with vectorization level = "
+        << DEAL_II_COMPILER_VECTORIZATION_LEVEL << std::endl;
+
+  int         n_devices       = 0;
+  cudaError_t cuda_error_code = cudaGetDeviceCount(&n_devices);
+  AssertCuda(cuda_error_code);
+  pcout << "  number of CUDA devices = " << n_devices << std::endl
+        << std::endl;
+  const unsigned int my_mpi_id =
+    Utilities::MPI::this_mpi_process(MPI_COMM_WORLD);
+  const int device_id = my_mpi_id % n_devices;
+  cuda_error_code     = cudaSetDevice(device_id);
+  AssertCuda(cuda_error_code);
+}
+
 
 
 int
@@ -741,57 +715,22 @@ main(int argc, char *argv[])
 {
   try
     {
-      using namespace Step64;
+      using namespace BP5;
 
       Utilities::MPI::MPI_InitFinalize mpi_init(argc, argv, 1);
 
-      ConditionalOStream pcout(
-        std::cout, Utilities::MPI::this_mpi_process(MPI_COMM_WORLD) == 0);
+      print_hardware_specs();
 
-      unsigned int min_run       = 1;
-      unsigned int cycle_min     = 11;
-      unsigned int cycle_max     = 11;
-      unsigned int n_iterations  = 200;
-      unsigned int n_repetitions = 10;
+      const unsigned int dim           = 3;
+      const unsigned int degree        = 5;
+      const unsigned int min_run       = 0;
+      const unsigned int cycle_min     = 7;
+      const unsigned int cycle_max     = 40;
+      const unsigned int n_iterations  = 200;
+      const unsigned int n_repetitions = 10;
 
-      if (argc > 1)
-        min_run = atoi(argv[1]);
-
-      if (argc > 2)
-        n_repetitions = atoi(argv[2]);
-
-      if (argc > 3)
-        n_iterations = atoi(argv[3]);
-
-      if (argc > 4)
-        cycle_min = cycle_max = atoi(argv[4]);
-
-      if (argc > 5)
-        cycle_max = atoi(argv[5]);
-
-      pcout << std::endl
-            << "deal.II info:" << std::endl
-            << std::endl
-            << "  deal.II git version " << DEAL_II_GIT_SHORTREV << " on branch "
-            << DEAL_II_GIT_BRANCH << std::endl
-            << "  with vectorization level = "
-            << DEAL_II_COMPILER_VECTORIZATION_LEVEL << std::endl;
-
-
-      int         n_devices       = 0;
-      cudaError_t cuda_error_code = cudaGetDeviceCount(&n_devices);
-      AssertCuda(cuda_error_code);
-      pcout << "  number of CUDA devices = " << n_devices << std::endl
-            << std::endl;
-      const unsigned int my_mpi_id =
-        Utilities::MPI::this_mpi_process(MPI_COMM_WORLD);
-      const int device_id = my_mpi_id % n_devices;
-      cuda_error_code     = cudaSetDevice(device_id);
-      AssertCuda(cuda_error_code);
-
-      HelmholtzProblem<3, 4> helmholtz_problem;
-      helmholtz_problem.run(
-        cycle_min, cycle_max, n_iterations, n_repetitions, min_run);
+      PoissonProblem<dim, degree> poisson_problem;
+      poisson_problem.run(cycle_min, cycle_max, n_iterations, n_repetitions, min_run);
     }
   catch (std::exception &exc)
     {

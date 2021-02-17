@@ -13,14 +13,14 @@
 DEAL_II_NAMESPACE_OPEN
 
 template <typename VectorType = Vector<double>>
-class SolverCG2 : public SolverBase<VectorType>
+class SolverCGFullMerge : public SolverBase<VectorType>
 {
 public:
   using size_type = types::global_dof_index;
 
-  SolverCG2(SolverControl &cn);
+  SolverCGFullMerge(SolverControl &cn);
 
-  virtual ~SolverCG2() override = default;
+  virtual ~SolverCGFullMerge() override = default;
 
   template <typename MatrixType, typename PreconditionerType>
   void
@@ -33,7 +33,7 @@ public:
 
 
 template <typename VectorType>
-SolverCG2<VectorType>::SolverCG2(SolverControl &cn)
+SolverCGFullMerge<VectorType>::SolverCGFullMerge(SolverControl &cn)
   : SolverBase<VectorType>(cn)
 {}
 
@@ -343,10 +343,10 @@ namespace internal
 template <typename VectorType>
 template <typename MatrixType, typename PreconditionerType>
 void
-SolverCG2<VectorType>::solve(const MatrixType &        A,
-                             VectorType &              x,
-                             const VectorType &        b,
-                             const PreconditionerType &preconditioner)
+SolverCGFullMerge<VectorType>::solve(const MatrixType &        A,
+                                     VectorType &              x,
+                                     const VectorType &        b,
+                                     const PreconditionerType &preconditioner)
 {
   dealii::SolverControl::State conv = dealii::SolverControl::iterate;
   using number                      = typename VectorType::value_type;
